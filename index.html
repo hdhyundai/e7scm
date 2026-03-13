@@ -1,0 +1,2069 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend
+} from 'recharts';
+import { 
+  Users, CheckCircle2, Clock, 
+  Briefcase, Building2, Ship, CalendarClock,
+  Factory, ChevronRight, X, Globe, MapPin, Milestone, CheckSquare, BookOpen, GraduationCap, PlaneLanding,
+  ListFilter, Database, AlertCircle, Link as LinkIcon, RefreshCw, Settings2, Save, Upload, Info,
+  MousePointerClick, FileSpreadsheet, UserX, UserCheck, PlayCircle, Building, FileText, Lock, ShieldCheck
+} from 'lucide-react';
+
+// --- [초기 데이터베이스 및 헬퍼 정의] ---
+const COLORS = ['#0284c7', '#06b6d4', '#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd'];
+
+const WEEK_MAP = [
+  {m:1, w:1}, {m:1, w:2}, {m:1, w:3}, {m:1, w:4},                 
+  {m:2, w:1}, {m:2, w:2}, {m:2, w:3}, {m:2, w:4},                 
+  {m:3, w:1}, {m:3, w:2}, {m:3, w:3}, {m:3, w:4}, {m:3, w:5},    
+  {m:4, w:1}, {m:4, w:2}, {m:4, w:3}, {m:4, w:4},                 
+  {m:5, w:1}, {m:5, w:2}, {m:5, w:3}, {m:5, w:4}, {m:5, w:5},    
+  {m:6, w:1}, {m:6, w:2}, {m:6, w:3}, {m:6, w:4},                 
+  {m:7, w:1}, {m:7, w:2}, {m:7, w:3}, {m:7, w:4}, {m:7, w:5},    
+  {m:8, w:1}, {m:8, w:2}, {m:8, w:3}, {m:8, w:4},                 
+  {m:9, w:1}, {m:9, w:2}, {m:9, w:3}, {m:9, w:4},                 
+  {m:10, w:1}, {m:10, w:2}, {m:10, w:3}, {m:10, w:4}, {m:10, w:5},  
+  {m:11, w:1}, {m:11, w:2}, {m:11, w:3}, {m:11, w:4},                
+  {m:12, w:1}, {m:12, w:2}, {m:12, w:3}, {m:12, w:4}                
+];
+
+const getWeekStr = (w) => WEEK_MAP[w - 1] ? `${WEEK_MAP[w - 1].m}월 ${WEEK_MAP[w - 1].w}주차` : '';
+const getMonthStr = (w) => WEEK_MAP[w - 1] ? `${WEEK_MAP[w - 1].m}월` : '';
+const isMonthStart = (w) => WEEK_MAP[w - 1] && WEEK_MAP[w - 1].w === 1;
+
+const getIsoWeek = (date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+};
+
+const STAGE_COLORS = {
+  "진행예정": "bg-slate-100 text-slate-400 border-slate-200",
+  "사전기량검증완료": "bg-purple-50 text-purple-700 border-purple-200",
+  "1차 육성(기량,한국어)": "bg-indigo-50 text-indigo-700 border-indigo-200",
+  "본기량검증완료": "bg-blue-50 text-blue-700 border-blue-200",
+  "2차 육성(기량,한국어)": "bg-teal-50 text-teal-700 border-teal-200",
+  "입국": "bg-green-50 text-green-700 border-green-200"
+};
+
+const DEPT_REQUEST_DB_DEFAULT = [
+  { id: 1, dept: '대조', job: '용접', reqCount: 18, reqMonth: 3 },
+  { id: 2, dept: '선행의장', job: '선각의장', reqCount: 35, reqMonth: 3 },
+  { id: 3, dept: '대조', job: '선각취부', reqCount: 19, reqMonth: 6 },
+  { id: 4, dept: '가공', job: '선각취부', reqCount: 14, reqMonth: 6 },
+  { id: 5, dept: '가공', job: '용접', reqCount: 10, reqMonth: 6 }, 
+  { id: 6, dept: '판넬', job: '용접', reqCount: 24, reqMonth: 6 },
+  { id: 7, dept: '의장1', job: '의장취부', reqCount: 15, reqMonth: 6 },
+  { id: 8, dept: '선행도장', job: '도장', reqCount: 29, reqMonth: 6 },
+  { id: 9, dept: '커미셔닝', job: '전기', reqCount: 30, reqMonth: 6 }, 
+];
+
+const AGENCY_SUPPLY_DB_DEFAULT = [
+  { country: '베트남', track: '공공/협회', agency: 'Koshipa3', job: '용접', count: 40, week_preTest: 9, week_mainTest: 22, week_edu2: 24, supplyWeek: 31, fixedDept: null, fixedCount: 0 }, 
+  { country: '인도네시아', track: '공공/협회', agency: '조선협회', job: '선각의장', count: 29, week_preTest: 4, week_mainTest: 17, week_edu2: 19, supplyWeek: 26, fixedDept: null, fixedCount: 0 }, 
+  { country: '인도네시아', track: '민간 중개', agency: '코인파워', job: '용접', count: 18, week_preTest: null, week_mainTest: 8, week_edu2: 10, supplyWeek: 17, fixedDept: null, fixedCount: 0 }, 
+  { country: '베트남', track: '민간 중개', agency: 'TM글로벌', job: '전기', count: 35, week_preTest: 4, week_mainTest: 17, week_edu2: 19, supplyWeek: 17, fixedDept: null, fixedCount: 0 }, 
+  { country: '베트남', track: '민간 중개', agency: '가나교역', job: '선각취부', count: 40, week_preTest: null, week_mainTest: null, week_edu2: 10, supplyWeek: 17, fixedDept: null, fixedCount: 0 }, 
+];
+
+const INDIVIDUAL_DB_DEFAULT = [
+  { uid: 'H-01', name: 'BUI MINH DAI', dob: '950101', age: '31', isE9: true, hasPreData: true, country: '베트남', track: '민간 중개', agency: '가나교역', job: '선각취부', preKrScore: 20, preSkillScore: 80, mainKrScore: '18', mainSkillScore: '85', mainChibuScore: '85', mainWeldScore: '-', preTestWeek: 1, prePassWeek: 2, preDropWeek: null, mainTestWeek: 3, mainPassWeek: 4, mainDropWeek: null, entryPassWeek: 8, entryDropWeek: null, assignedDept: '', videoUrl: '', personalityTestUrl: '' }
+];
+
+const parseCSVText = (text) => {
+  const result = [];
+  let currentLine = [];
+  let currentValue = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"') {
+      if (insideQuotes && nextChar === '"') {
+        currentValue += '"';
+        i++; 
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      currentLine.push(currentValue.trim());
+      currentValue = '';
+    } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !insideQuotes) {
+      if (char === '\r') i++; 
+      currentLine.push(currentValue.trim());
+      result.push(currentLine);
+      currentLine = [];
+      currentValue = '';
+    } else {
+      currentValue += char;
+    }
+  }
+  if (currentValue !== '' || currentLine.length > 0) {
+    currentLine.push(currentValue.trim());
+    result.push(currentLine);
+  }
+  return result;
+};
+
+const parseWeekInfo = (val) => {
+  if (!val) return null;
+  const rawStr = String(val);
+  const noSpaceVal = rawStr.replace(/\s+/g, '');
+  if (noSpaceVal === '') return null;
+  
+  if (noSpaceVal.includes('탈락')) return '탈락';
+
+  const dateMatch = noSpaceVal.match(/(\d{2,4})[-\.\/](\d{1,2})[-\.\/](\d{1,2})/);
+  if (dateMatch) {
+      let year = parseInt(dateMatch[1]);
+      if (year < 100) year += 2000;
+      const month = parseInt(dateMatch[2]) - 1; 
+      const day = parseInt(dateMatch[3]);
+      return getIsoWeek(new Date(year, month, day));
+  }
+  
+  const shortDateMatch = noSpaceVal.match(/^(\d{1,2})[-\.\/](\d{1,2})$/);
+  if (shortDateMatch) {
+      const year = 2026;
+      const month = parseInt(shortDateMatch[1]) - 1;
+      const day = parseInt(shortDateMatch[2]);
+      return getIsoWeek(new Date(year, month, day));
+  }
+  
+  const numMatch = noSpaceVal.match(/^(\d+)$/);
+  if (numMatch) {
+      const num = Number(numMatch[1]);
+      if (num > 0 && num <= 52) return num; 
+  }
+
+  return null;
+};
+
+const parsePreRow = (cols, rowIndex, agencySupplyDB) => {
+  if (!cols || cols.length < 24) return null;
+  const uid = cols[1] ? String(cols[1]).trim() : '';
+  const name = cols[3] ? String(cols[3]).trim() : '';
+  const dob = cols[4] ? String(cols[4]).trim() : '';
+  if (!name || name === '성 명' || name === '이름' || uid === '응시번호' || uid.includes('B열')) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(name)) return null;
+
+  const job = cols[2] ? String(cols[2]).trim() : '';
+  const isChibu = job.includes('취부');
+  const agency = cols[23] ? String(cols[23]).trim() : '미지정';
+  
+  const agencyInfo = agencySupplyDB.find(a => a.agency === agency && a.job === job) || agencySupplyDB.find(a => a.agency === agency);
+  const track = agencyInfo ? agencyInfo.track : '미지정';
+  const expectedSupplyWeek = agencyInfo ? agencyInfo.supplyWeek : null;
+
+  let preTestW = parseWeekInfo(cols[24]); // Y열: 응시일시
+  let prePassW = parseWeekInfo(cols[25]); // Z열: 합격일자
+  let preDropW = parseWeekInfo(cols[26]); // AA열: 사전기량 탈락일자
+
+  // F열(인덱스 5): E-9 출신 여부 ("O", "o", "○" 체크)
+  const isE9 = cols[5] ? /[oO○]/.test(String(cols[5])) : false;
+  // G열(인덱스 6): 나이 직접 추출
+  const age = cols[6] ? String(cols[6]).trim() : '';
+
+  return {
+      uid: uid || `N/A-pre-${rowIndex}`,
+      job: job || '미지정',
+      name: name,
+      dob: dob,
+      age: age,
+      isE9: isE9,
+      preKrScore: String(cols[13] || '').replace(/[^0-9]/g, ''),
+      preSkillScore: isChibu ? String(cols[17] || '').replace(/[^0-9]/g, '') : String(cols[19] || '').replace(/[^0-9]/g, ''),
+      mainChibuScore: String(cols[17] || '').replace(/[^0-9]/g, ''),
+      mainWeldScore: String(cols[19] || '').replace(/[^0-9]/g, ''),
+      country: cols[22] || '미지정',
+      agency: agency,
+      track: track,
+      preTestWeek: preTestW,
+      prePassWeek: prePassW,
+      preDropWeek: preDropW,
+      expectedSupplyWeek: expectedSupplyWeek
+  };
+};
+
+const parseMainRow = (cols, rowIndex, agencySupplyDB) => {
+  if (!cols || cols.length < 24) return null;
+  const uid = cols[1] ? String(cols[1]).trim() : '';
+  const name = cols[3] ? String(cols[3]).trim() : '';
+  const dob = cols[4] ? String(cols[4]).trim() : '';
+  if (!name || name === '성 명' || name === '이름' || uid === '응시번호' || uid.includes('B열')) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(name)) return null;
+
+  const job = cols[2] ? String(cols[2]).trim() : '';
+  const isChibu = job.includes('취부');
+  const agency = cols[23] ? String(cols[23]).trim() : '미지정';
+  
+  const agencyInfo = agencySupplyDB.find(a => a.agency === agency && a.job === job) || agencySupplyDB.find(a => a.agency === agency);
+  const track = agencyInfo ? agencyInfo.track : '미지정';
+  const expectedSupplyWeek = agencyInfo ? agencyInfo.supplyWeek : null;
+
+  let mainTestW = parseWeekInfo(cols[24]); // Y열: 응시일시
+  let mainPassW = parseWeekInfo(cols[25]); // Z열: 합격일자
+  let mainDropW = parseWeekInfo(cols[26]); // AA열: 본기량 탈락일자
+  let entryPassW = parseWeekInfo(cols[27]); // AB열: 입국일자
+  let entryDropW = parseWeekInfo(cols[28]); // AC열: 입국 탈락일자
+
+  // F열(인덱스 5): E-9 출신 여부 ("O", "o", "○" 체크)
+  const isE9 = cols[5] ? /[oO○]/.test(String(cols[5])) : false;
+  // G열(인덱스 6): 나이 직접 추출
+  const age = cols[6] ? String(cols[6]).trim() : '';
+
+  return {
+      uid: uid || `N/A-main-${rowIndex}`,
+      job: job || '미지정',
+      name: name,
+      dob: dob,
+      age: age,
+      isE9: isE9,
+      country: cols[22] || '미지정',
+      agency: agency,
+      track: track,
+      mainKrScore: String(cols[13] || '').replace(/[^0-9]/g, ''),
+      mainSkillScore: isChibu ? String(cols[17] || '').replace(/[^0-9]/g, '') : String(cols[19] || '').replace(/[^0-9]/g, ''),
+      mainChibuScore: String(cols[17] || '').replace(/[^0-9]/g, ''),
+      mainWeldScore: String(cols[19] || '').replace(/[^0-9]/g, ''),
+      mainTestWeek: mainTestW,
+      mainPassWeek: mainPassW,
+      mainDropWeek: mainDropW,
+      entryPassWeek: entryPassW,
+      entryDropWeek: entryDropW,
+      assignedDept: cols[30], // AE열: 배치부서
+      videoUrl: cols[31] ? cols[31].trim() : null, // AF열: 영상
+      personalityTestUrl: cols[32] ? cols[32].trim() : null, // AG열: 인성검사 URL
+      expectedSupplyWeek: expectedSupplyWeek
+  };
+};
+
+const getIndividualStatus = (ind, currentWeek) => {
+  let stage = '진행예정';
+
+  if (ind.hasPreData) {
+    if (!ind.preTestWeek || currentWeek < ind.preTestWeek) return { stage: '진행예정', isDropped: false };
+    stage = '사전기량검증완료';
+
+    if (ind.preDropWeek === '탈락' || ind.prePassWeek === '탈락' || (typeof ind.preDropWeek === 'number' && currentWeek >= ind.preDropWeek)) {
+      return { stage, isDropped: true, droppedAt: stage };
+    }
+
+    if (!ind.prePassWeek || currentWeek < ind.prePassWeek) return { stage, isDropped: false };
+    stage = '1차 육성(기량,한국어)';
+  }
+
+  if (!ind.mainTestWeek || currentWeek < ind.mainTestWeek) return { stage, isDropped: false };
+  stage = '본기량검증완료';
+
+  if (ind.mainDropWeek === '탈락' || ind.mainPassWeek === '탈락' || (typeof ind.mainDropWeek === 'number' && currentWeek >= ind.mainDropWeek)) {
+    return { stage, isDropped: true, droppedAt: stage };
+  }
+
+  if (!ind.mainPassWeek || currentWeek < ind.mainPassWeek) return { stage, isDropped: false };
+  stage = '2차 육성(기량,한국어)';
+
+  if (ind.entryDropWeek === '탈락' || ind.entryPassWeek === '탈락' || (typeof ind.entryDropWeek === 'number' && currentWeek >= ind.entryDropWeek)) {
+    return { stage: '입국', isDropped: true, droppedAt: '입국' };
+  }
+
+  if (!ind.entryPassWeek || currentWeek < ind.entryPassWeek) return { stage, isDropped: false };
+  
+  return { stage: '입국', isDropped: false };
+};
+
+// [개별 명단 할당 최적화 로직 적용]
+const assignDepartments = (individuals, requests) => {
+  let needs = requests.map(r => ({
+    ...r, 
+    remaining: r.reqCount,
+    assignedCountries: new Set(),
+    assignedAgencies: new Set()
+  }));
+  let inds = individuals.map(ind => ({...ind}));
+
+  const availableDepts = [...new Set(needs.map(n => n.dept))].sort((a, b) => b.length - a.length);
+
+  inds.forEach(ind => {
+    if (ind.assignedDept && ind.assignedDept.trim() !== '') {
+      let assigned = ind.assignedDept.trim();
+      
+      if (!needs.some(n => n.dept === assigned)) {
+        const matchedDept = availableDepts.find(dept => assigned.includes(dept));
+        if (matchedDept) {
+          assigned = matchedDept;
+        }
+      }
+
+      let req = needs.find(n => n.dept === assigned && n.job === ind.job);
+      if (req && req.remaining > 0) {
+        req.remaining--; 
+        req.assignedCountries.add(ind.country);
+        req.assignedAgencies.add(ind.agency);
+      }
+      ind.displayDept = assigned;
+      ind.isDeptFixed = true;
+    } else {
+      ind.isDeptFixed = false;
+    }
+  });
+
+  const pendingInds = inds.filter(i => !i.isDeptFixed);
+  const groups = {};
+  
+  pendingInds.forEach(ind => {
+    const week = ind.entryPassWeek || 999;
+    const key = `${ind.job}_${ind.country}_${ind.agency}_${week}`;
+    if (!groups[key]) groups[key] = { job: ind.job, country: ind.country, agency: ind.agency, week, count: 0, members: [] };
+    groups[key].count++;
+    groups[key].members.push(ind);
+  });
+
+  const sortedGroups = Object.values(groups).sort((a, b) => b.count - a.count);
+
+  sortedGroups.forEach(g => {
+    let remainingToAssign = g.count;
+    
+    while (remainingToAssign > 0) {
+      let validReqs = needs.filter(n => n.job === g.job && n.remaining > 0);
+      if (validReqs.length === 0) break; 
+
+      validReqs.sort((a, b) => {
+        const aHasC = a.assignedCountries.has(g.country);
+        const bHasC = b.assignedCountries.has(g.country);
+        if (aHasC && !bHasC) return -1;
+        if (!aHasC && bHasC) return 1;
+
+        const targetWeekA = a.reqMonth * 4.34;
+        const targetWeekB = b.reqMonth * 4.34;
+        const gWeek = g.week === 999 ? 52 : g.week;
+        const diffA = Math.abs(gWeek - targetWeekA);
+        const diffB = Math.abs(gWeek - targetWeekB);
+        
+        if (Math.abs(diffA - diffB) > 2) {
+            return diffA - diffB;
+        }
+
+        const aHasA = a.assignedAgencies.has(g.agency);
+        const bHasA = b.assignedAgencies.has(g.agency);
+        if (aHasA && !bHasA) return -1;
+        if (!aHasA && bHasA) return 1;
+
+        if (a.remaining >= remainingToAssign && b.remaining < remainingToAssign) return -1;
+        if (b.remaining >= remainingToAssign && a.remaining < remainingToAssign) return 1;
+        return b.remaining - a.remaining; 
+      });
+
+      let bestReq = validReqs[0];
+      const assignCount = Math.min(remainingToAssign, bestReq.remaining);
+      
+      bestReq.assignedCountries.add(g.country);
+      bestReq.assignedAgencies.add(g.agency);
+
+      for (let i = 0; i < assignCount; i++) {
+        const member = g.members.shift();
+        if (member) member.displayDept = bestReq.dept;
+      }
+      
+      bestReq.remaining -= assignCount;
+      remainingToAssign -= assignCount;
+    }
+    
+    g.members.forEach(member => member.displayDept = '대기(TBD)');
+  });
+
+  return inds;
+};
+
+// [수정: Sheet2 J/K열 확정/예측 로직 분리 적용]
+const autoAllocate = (requests, supplies) => {
+  const demandPool = requests.map(r => ({ 
+    ...r, 
+    remaining: r.reqCount, 
+    fulfillments: [],
+    assignedCountries: new Set(),
+    assignedAgencies: new Set() 
+  }));
+  const supplyPool = supplies.map(s => ({ ...s, remaining: s.count }));
+
+  const availableDepts = [...new Set(demandPool.map(d => d.dept))].sort((a, b) => b.length - a.length);
+
+  supplyPool.sort((a, b) => b.count - a.count);
+
+  // 1차 패스: J/K열을 통해 특정 부서로 확정된 물량 우선 배정
+  supplyPool.forEach(s => {
+    if (s.fixedDept && s.fixedCount > 0) {
+      let assigned = s.fixedDept.trim();
+      
+      if (!demandPool.some(d => d.dept === assigned)) {
+        const matchedDept = availableDepts.find(dept => assigned.includes(dept));
+        if (matchedDept) {
+          assigned = matchedDept;
+        }
+      }
+
+      let take = Math.min(s.remaining, s.fixedCount);
+      let validDemands = demandPool.filter(d => d.dept === assigned && d.job === s.job);
+      
+      if (validDemands.length > 0) {
+         let targetDemand = validDemands[0];
+         targetDemand.fulfillments.push({ 
+            count: take, 
+            supplyWeek: s.supplyWeek, 
+            agency: s.agency, 
+            country: s.country,
+            isFixed: true
+         });
+         targetDemand.assignedCountries.add(s.country);
+         targetDemand.assignedAgencies.add(s.agency);
+         
+         s.remaining -= take;
+         targetDemand.remaining -= take;
+      } else {
+         // 요청 DB에 해당 직무/부서가 명시되지 않은 상태에서 확정 배정된 경우 임시 수요 공간 생성
+         let newDemand = {
+            id: demandPool.length + 1000,
+            dept: assigned,
+            job: s.job,
+            reqCount: 0,
+            reqMonth: s.supplyWeek ? Math.ceil(s.supplyWeek / 4.34) : 12,
+            remaining: -take, // 요청 인원수(0) 초과 할당을 위해 마이너스 처리
+            fulfillments: [{
+                count: take,
+                supplyWeek: s.supplyWeek,
+                agency: s.agency,
+                country: s.country,
+                isFixed: true
+            }],
+            assignedCountries: new Set([s.country]),
+            assignedAgencies: new Set([s.agency])
+         };
+         demandPool.push(newDemand);
+         s.remaining -= take;
+      }
+    }
+  });
+
+  // 2차 패스: 나머지 "미확정" 인원들을 예측(Auto-allocate)으로 일반 부서들에 배정
+  supplyPool.forEach(s => {
+    while (s.remaining > 0) {
+      let validDemands = demandPool.filter(d => d.job === s.job && d.remaining > 0);
+      if (validDemands.length === 0) break;
+
+      validDemands.sort((a, b) => {
+        const aHasC = a.assignedCountries.has(s.country);
+        const bHasC = b.assignedCountries.has(s.country);
+        if (aHasC && !bHasC) return -1;
+        if (!aHasC && bHasC) return 1;
+
+        const targetWeekA = a.reqMonth * 4.34;
+        const targetWeekB = b.reqMonth * 4.34;
+        const sWeek = s.supplyWeek || 52;
+        const diffA = Math.abs(sWeek - targetWeekA);
+        const diffB = Math.abs(sWeek - targetWeekB);
+        
+        if (Math.abs(diffA - diffB) > 2) {
+            return diffA - diffB;
+        }
+
+        const aHasA = a.assignedAgencies.has(s.agency);
+        const bHasA = b.assignedAgencies.has(s.agency);
+        if (aHasA && !bHasA) return -1;
+        if (!aHasA && bHasA) return 1;
+
+        if (a.remaining >= s.remaining && b.remaining < s.remaining) return -1;
+        if (b.remaining >= s.remaining && a.remaining < s.remaining) return 1;
+        return b.remaining - a.remaining; 
+      });
+
+      let targetDemand = validDemands[0];
+      let take = Math.min(s.remaining, targetDemand.remaining);
+      
+      targetDemand.fulfillments.push({ 
+        count: take, 
+        supplyWeek: s.supplyWeek, 
+        agency: s.agency, 
+        country: s.country,
+        isFixed: false
+      });
+      targetDemand.assignedCountries.add(s.country);
+      targetDemand.assignedAgencies.add(s.agency);
+      
+      s.remaining -= take;
+      targetDemand.remaining -= take;
+    }
+  });
+
+  return demandPool.map(req => {
+    const { assignedCountries, assignedAgencies, ...rest } = req;
+    return {
+      ...rest,
+      fulfilledCount: req.reqCount - Math.max(0, req.remaining),
+      unfulfilledCount: Math.max(0, req.remaining)
+    };
+  }).sort((a, b) => a.id - b.id); 
+};
+
+const getSheetId = (url) => {
+  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : null;
+};
+
+const StatCard = ({ title, value, subtitle, icon: Icon, colorClass, onClick, isSelected, activeStatus }) => (
+  <div onClick={onClick} className={`dx-glass p-6 sm:p-8 rounded-3xl transition-all duration-300 cursor-pointer flex items-center space-x-5 hover:-translate-y-1 hover:shadow-xl relative overflow-hidden group ${isSelected ? 'ring-2 ring-cyan-400 shadow-[0_10px_30px_-10px_rgba(6,182,212,0.4)]' : `border border-slate-200 shadow-sm ${activeStatus && !isSelected ? 'opacity-50 grayscale-[50%]' : 'opacity-100'}`}`}>
+    <div className={`absolute -right-6 -top-6 opacity-[0.03] group-hover:opacity-10 transition-opacity duration-500 transform group-hover:scale-110 pointer-events-none`}>
+      <Icon size={120} />
+    </div>
+    <div className={`p-4 sm:p-5 rounded-2xl ${colorClass} shadow-lg shrink-0 relative z-10`}>
+      <Icon size={28} className="text-white sm:w-8 sm:h-8" />
+    </div>
+    <div className="flex flex-col justify-center min-w-0 relative z-10">
+      <h3 className="text-slate-500 text-sm sm:text-base font-bold mb-1 tracking-tight break-keep truncate">{title}</h3>
+      <div className="flex items-baseline space-x-2 flex-wrap">
+        <span className="text-3xl sm:text-4xl font-black text-slate-800 tracking-tighter">{value}</span>
+        <span className="text-xs sm:text-sm font-semibold text-slate-400 break-keep">{subtitle}</span>
+      </div>
+    </div>
+  </div>
+);
+
+const ActualStagePipeline = ({ individuals, onStageClick, currentWeek }) => {
+  const steps = [
+    { key: "사전기량검증완료", icon: CheckSquare, color: "text-purple-600", bg: "bg-purple-100", border: "border-purple-300", tag: "1차 평가" },
+    { key: "1차 육성(기량,한국어)", icon: BookOpen, color: "text-indigo-600", bg: "bg-indigo-100", border: "border-indigo-300", tag: "현지 교육" },
+    { key: "본기량검증완료", icon: Milestone, color: "text-blue-600", bg: "bg-blue-100", border: "border-blue-300", tag: "최종 평가" },
+    { key: "2차 육성(기량,한국어)", icon: GraduationCap, color: "text-teal-600", bg: "bg-teal-100", border: "border-teal-300", tag: "서류/비자" },
+    { key: "입국", icon: PlaneLanding, color: "text-cyan-600", bg: "bg-cyan-100", border: "border-cyan-300", tag: "한국 도착" }
+  ];
+
+  const counts = {};
+  const dropouts = {};
+  steps.forEach(s => { counts[s.key] = 0; dropouts[s.key] = 0; });
+  
+  let totalPreTested = 0;
+  let totalMainTested = 0;
+
+  individuals.forEach(ind => {
+    const { stage, isDropped, droppedAt } = getIndividualStatus(ind, currentWeek);
+    if (isDropped && dropouts[droppedAt] !== undefined) {
+      dropouts[droppedAt]++;
+    } else if (!isDropped && counts[stage] !== undefined) {
+      counts[stage]++;
+    }
+    
+    // 누적 검증 인원 계산 (타임라인 도달 여부 및 텍스트 탈락자 포함)
+    const tookPre = ind.hasPreData && (
+      (typeof ind.preTestWeek === 'number' && currentWeek >= ind.preTestWeek) || 
+      (typeof ind.prePassWeek === 'number' && currentWeek >= ind.prePassWeek) || 
+      (typeof ind.preDropWeek === 'number' && currentWeek >= ind.preDropWeek) ||
+      ind.prePassWeek === '탈락' || ind.preDropWeek === '탈락'
+    );
+    if (tookPre) totalPreTested++;
+
+    const tookMain = (
+      (typeof ind.mainTestWeek === 'number' && currentWeek >= ind.mainTestWeek) ||
+      (typeof ind.mainPassWeek === 'number' && currentWeek >= ind.mainPassWeek) ||
+      (typeof ind.mainDropWeek === 'number' && currentWeek >= ind.mainDropWeek) ||
+      ind.mainPassWeek === '탈락' || ind.mainDropWeek === '탈락'
+    );
+    if (tookMain) totalMainTested++;
+  });
+
+  return (
+    <div className="dx-glass p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm mb-8 sm:mb-10 relative overflow-hidden">
+      <div className="absolute -right-10 -top-10 text-slate-400 opacity-[0.03] pointer-events-none">
+        <Users size={250} />
+      </div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-8 gap-4 relative z-10 border-b border-slate-100 pb-4">
+        <div>
+          <h3 className="text-base sm:text-lg font-black text-slate-800 flex items-center tracking-tight break-keep">
+            <FileSpreadsheet size={20} className="mr-2 text-cyan-600 shrink-0"/> 
+            단계별 수급 진행 현황
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1.5">
+            선택한 타임라인 주차(<strong className="text-cyan-600 font-extrabold">{getWeekStr(currentWeek)}</strong>)를 기준으로 누적된 각 단계별 인원 현황입니다.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <div className="text-xs sm:text-sm font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm flex items-center">
+            <CheckSquare size={14} className="mr-1.5 text-purple-500" />
+            사전기량검증: <span className="text-slate-800 font-black ml-1">{totalPreTested}명</span>
+          </div>
+          <div className="text-xs sm:text-sm font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm flex items-center">
+            <Milestone size={14} className="mr-1.5 text-blue-500" />
+            본기량검증: <span className="text-slate-800 font-black ml-1">{totalMainTested}명</span>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex flex-row items-stretch w-full relative pt-6 pb-6 overflow-x-auto snap-x hide-scrollbar">
+        <div className="hidden md:block absolute top-[40%] left-0 w-full h-1.5 bg-slate-100 -translate-y-1/2 z-0 mt-[-12px] rounded-full"></div>
+        {steps.map((step, idx) => (
+          <div key={idx} onClick={() => onStageClick(step.key, false)} 
+               className={`flex flex-col items-center relative z-10 flex-shrink-0 w-[140px] md:w-1/5 snap-center transition-transform duration-300 cursor-pointer hover:-translate-y-2 group`}>
+            <div className={`absolute -top-5 text-xs font-black px-3 py-1 rounded-full bg-white border shadow-sm z-20 whitespace-nowrap ${step.color} ${step.border} group-hover:bg-slate-50 transition-colors`}>{step.tag}</div>
+            <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full ${step.bg} ${step.color} flex items-center justify-center border-[4px] border-white shadow-lg mb-3 sm:mb-4 ring-2 ${step.border} mt-2 transition-all shrink-0 relative`}>
+              <step.icon size={28} className="sm:w-8 sm:h-8 relative z-10" />
+              {/* Glow effect */}
+              <div className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-50 blur-md transition-opacity duration-500 bg-current`}></div>
+            </div>
+            <span className="text-sm sm:text-base font-bold text-slate-500 text-center mb-1 px-1 leading-normal break-keep flex items-center justify-center tracking-tight">{step.key}</span>
+            <span className={`text-2xl sm:text-3xl font-black transition-colors tracking-tighter ${counts[step.key] > 0 ? 'text-slate-800' : 'text-slate-300'}`}>{counts[step.key]}명</span>
+            
+            <div onClick={(e) => { e.stopPropagation(); if(dropouts[step.key] > 0) onStageClick(step.key, true); }} 
+                 className={`mt-2 text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-lg flex items-center shadow-sm transition-all duration-300 ${dropouts[step.key] > 0 ? 'bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 hover:shadow-md cursor-pointer' : 'bg-slate-50 border border-slate-100 text-slate-400'}`}>
+              <UserX size={12} className="mr-1" /> 탈락 {dropouts[step.key]}명
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const IndividualDetailModal = ({ isOpen, onClose, stage, showDropped, individuals, currentWeek }) => {
+  if (!isOpen || !stage) return null;
+  
+  const filteredIndividuals = individuals.filter(ind => {
+    const status = getIndividualStatus(ind, currentWeek);
+    if (showDropped) {
+      return status.isDropped && status.droppedAt === stage;
+    } else {
+      return status.stage === stage && !status.isDropped;
+    }
+  });
+
+  const isPreStage = ['사전기량검증완료', '1차 육성(기량,한국어)'].includes(stage);
+  const isMainStage = ['본기량검증완료', '2차 육성(기량,한국어)', '입국'].includes(stage);
+  const showExtraColumns = isMainStage;
+  
+  // 모달 상단 테마 색상 (DX 스타일 적용)
+  let themeGradient = 'bg-gradient-to-r from-slate-800 to-slate-700';
+  if (showDropped) themeGradient = 'bg-gradient-to-r from-red-700 to-rose-700';
+  else if (stage === '사전기량검증완료') themeGradient = 'bg-gradient-to-r from-purple-700 to-fuchsia-700';
+  else if (stage === '1차 육성(기량,한국어)') themeGradient = 'bg-gradient-to-r from-indigo-700 to-blue-700';
+  else if (stage === '본기량검증완료') themeGradient = 'bg-gradient-to-r from-blue-700 to-cyan-700';
+  else if (stage === '2차 육성(기량,한국어)') themeGradient = 'bg-gradient-to-r from-teal-700 to-emerald-700';
+  else if (stage === '입국') themeGradient = 'bg-gradient-to-r from-cyan-600 to-teal-600';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-7xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col border border-slate-200/50">
+        <div className={`p-6 sm:p-8 flex justify-between items-center ${themeGradient} text-white shrink-0 gap-4 shadow-md`}>
+          <div className="flex items-center space-x-4 sm:space-x-5 min-w-0">
+            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm shadow-inner shrink-0">
+              {showDropped ? <UserX size={28} className="sm:w-8 sm:h-8" /> : <UserCheck size={28} className="sm:w-8 sm:h-8" />}
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight truncate break-keep text-white drop-shadow-md">
+                [{stage}] {showDropped ? '탈락자' : '진행(완료)'} 명단
+              </h2>
+              <p className="text-xs sm:text-sm font-medium text-white/80 mt-1 whitespace-nowrap">
+                타임라인 기준: {getWeekStr(currentWeek)}
+              </p>
+            </div>
+            <div className="hidden sm:flex ml-4 shrink-0">
+              <span className="bg-black/30 backdrop-blur-md px-4 py-1.5 rounded-full text-sm font-bold shadow-inner border border-white/10">
+                총 인원: {filteredIndividuals.length}명
+              </span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-black/20 transition-all shrink-0 bg-black/10 border border-white/10"><X size={24} /></button>
+        </div>
+        <div className="p-0 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50">
+          {filteredIndividuals.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <Users size={64} className="mb-4 opacity-20" />
+              <p className="font-bold text-lg">해당 조건에 일치하는 명단이 없습니다.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto sm:rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+              <table className={`w-full text-center border-collapse ${isMainStage ? 'min-w-[950px]' : 'min-w-[700px]'}`}>
+                <thead className="bg-slate-100/80 text-slate-600 text-xs sm:text-sm border-b border-slate-200">
+                  <tr>
+                    <th className="p-2 sm:p-3 font-black align-middle text-center w-10 border-r border-slate-200">No.</th>
+                    <th className="p-2 sm:p-3 font-black align-middle text-left border-r border-slate-200">성 명 (응시번호)</th>
+                    <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200">국가 / 업체명</th>
+                    <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200">직무 / <span className="text-cyan-600">배치부서</span></th>
+                    
+                    {isPreStage && (
+                      <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200 bg-purple-50/50">
+                        <div className="text-purple-800">사전기량평가</div>
+                        <div className="text-[10px] font-bold text-purple-500 mt-0.5">기량 / 한국어</div>
+                      </th>
+                    )}
+                    
+                    {isMainStage && (
+                      <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200 bg-blue-50/50 text-blue-900">
+                        본기량 상세 점수<br/>
+                        <span className="text-[9px] sm:text-[10px] text-blue-500 font-semibold tracking-tight">취부 / 용접 / 한국어</span>
+                      </th>
+                    )}
+                    
+                    <th className="p-2 sm:p-3 font-black align-middle text-center">진행 상태</th>
+                    {showExtraColumns && (
+                      <th className="p-2 sm:p-3 font-black align-middle text-center border-l border-slate-200">첨부 (영상/인성)</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="text-[13px] sm:text-sm font-medium">
+                  {filteredIndividuals.map((ind, idx) => {
+                    const status = getIndividualStatus(ind, currentWeek);
+                    return (
+                      <tr key={idx} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${status.isDropped ? 'bg-red-50/30' : ''}`}>
+                        <td className="p-2 sm:p-3 text-slate-400 align-middle text-center font-bold border-r border-slate-100">{idx + 1}</td>
+                        <td className="p-2 sm:p-3 text-slate-800 align-middle text-left border-r border-slate-100">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="font-extrabold whitespace-nowrap tracking-tight">{ind.name || '이름없음'}</div>
+                            {ind.isE9 && <span className="bg-amber-100 text-amber-700 text-[9px] px-1.5 py-0.5 rounded font-black border border-amber-200 shadow-sm flex items-center"><ShieldCheck size={10} className="mr-0.5"/>E-9</span>}
+                          </div>
+                          <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono mt-0.5">{ind.uid}</div>
+                        </td>
+                        <td className="p-2 sm:p-3 align-middle text-center border-r border-slate-100">
+                          <div className="flex items-center justify-center space-x-1 mb-1">
+                            <MapPin size={12} className={ind.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'} />
+                            <span className="font-bold text-slate-700 whitespace-nowrap text-xs">{ind.country}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 whitespace-nowrap font-semibold">{ind.agency} <span className="text-slate-400 font-normal">({ind.track})</span></div>
+                        </td>
+                        
+                        <td className="p-2 sm:p-3 text-slate-700 align-middle text-center border-r border-slate-100 whitespace-nowrap">
+                          <div className="font-extrabold mb-1 text-xs">{ind.job}</div>
+                          <div className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded flex justify-center items-center ${ind.isDeptFixed ? 'bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                            {ind.displayDept} {ind.isDeptFixed ? '(확정)' : '(임의)'}
+                          </div>
+                        </td>
+                        
+                        {isPreStage && (
+                          <td className="p-2 sm:p-3 align-middle text-center border-r border-slate-100 bg-purple-50/10">
+                            <div className="flex items-center justify-center space-x-2 sm:space-x-3">
+                              <div className="flex flex-col items-center w-8 sm:w-10">
+                                <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">기량</span>
+                                <span className={`font-black text-base ${Number(ind.preSkillScore) >= 80 ? 'text-purple-600' : 'text-slate-500'}`}>{ind.preSkillScore || '-'}</span>
+                              </div>
+                              <div className="w-px h-6 bg-slate-200"></div>
+                              <div className="flex flex-col items-center w-8 sm:w-10">
+                                <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">한국어</span>
+                                <span className={`font-black text-base ${Number(ind.preKrScore) >= 15 ? 'text-emerald-600' : 'text-slate-500'}`}>{ind.preKrScore || '-'}</span>
+                              </div>
+                            </div>
+                          </td>
+                        )}
+                        
+                        {isMainStage && (
+                          <td className="p-2 sm:p-3 align-middle border-r border-slate-100 bg-blue-50/10">
+                            <div className="flex items-center justify-center gap-2 sm:gap-3">
+                              <div className="flex flex-col items-center w-7 sm:w-8">
+                                <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">취부</span>
+                                <span className={`font-black tracking-tighter ${Number(ind.mainChibuScore) >= 80 ? 'text-cyan-600 text-base' : 'text-slate-600 text-sm'}`}>{ind.mainChibuScore || '-'}</span>
+                              </div>
+                              <div className="w-px h-5 bg-slate-200"></div>
+                              <div className="flex flex-col items-center w-7 sm:w-8">
+                                <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">용접</span>
+                                <span className={`font-black tracking-tighter ${Number(ind.mainWeldScore) >= 80 ? 'text-cyan-600 text-base' : 'text-slate-600 text-sm'}`}>{ind.mainWeldScore || '-'}</span>
+                              </div>
+                              <div className="w-px h-5 bg-slate-200"></div>
+                              <div className="flex flex-col items-center w-7 sm:w-8">
+                                <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">한국어</span>
+                                <span className={`font-black tracking-tighter ${Number(ind.mainKrScore) >= 15 ? 'text-emerald-500 text-base' : 'text-slate-600 text-sm'}`}>{ind.mainKrScore || '-'}</span>
+                              </div>
+                            </div>
+                          </td>
+                        )}
+
+                        <td className="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
+                          {status.isDropped ? (
+                            <span className="inline-flex items-center bg-rose-50 text-rose-700 px-2 py-1 rounded text-[11px] sm:text-xs font-bold border border-rose-200 shadow-sm">
+                              <UserX size={14} className="mr-1" /> 탈락
+                            </span>
+                          ) : status.stage === '입국' ? (
+                            <span className="inline-flex items-center bg-cyan-50 text-cyan-700 px-2 py-1 rounded text-[11px] sm:text-xs font-bold border border-cyan-200 shadow-sm">
+                              <CheckCircle2 size={14} className="mr-1" /> 완료
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center bg-slate-100 text-slate-700 px-2 py-1 rounded text-[11px] sm:text-xs font-bold border border-slate-200 shadow-sm">
+                              <CheckCircle2 size={14} className="mr-1" /> 진행
+                            </span>
+                          )}
+                        </td>
+                        {showExtraColumns && (
+                          <td className="p-2 sm:p-3 align-middle text-center border-l border-slate-100">
+                             <div className="flex flex-row gap-1.5 items-center justify-center">
+                                {ind.videoUrl ? (
+                                  <a 
+                                    href={ind.videoUrl.startsWith('http') ? ind.videoUrl : `https://${ind.videoUrl}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center justify-center px-2 py-1 bg-slate-800 text-white border border-slate-700 rounded text-[10px] sm:text-[11px] font-bold hover:bg-black transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                                  >
+                                    <PlayCircle size={12} className="mr-1 text-cyan-400" /> 영상
+                                  </a>
+                                ) : (
+                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
+                                )}
+                                {ind.personalityTestUrl ? (
+                                  <a 
+                                    href={ind.personalityTestUrl.startsWith('http') ? ind.personalityTestUrl : `https://${ind.personalityTestUrl}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center justify-center px-2 py-1 bg-white text-slate-700 border border-slate-300 rounded text-[10px] sm:text-[11px] font-bold hover:border-cyan-400 hover:text-cyan-700 transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                                  >
+                                    <FileText size={12} className="mr-1 text-cyan-600" /> 인성
+                                  </a>
+                                ) : (
+                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
+                                )}
+                             </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DeptModal = ({ isOpen, onClose, dept, data, currentWeek }) => {
+  if (!isOpen) return null;
+  const totalReq = data.reduce((sum, item) => sum + item.reqCount, 0);
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col border border-slate-200">
+        <div className="bg-gradient-to-r from-slate-900 to-blue-900 p-6 sm:p-8 flex justify-between items-center text-white shrink-0 gap-4 shadow-md">
+          <div className="flex items-center space-x-4 min-w-0">
+            <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-sm border border-white/10 shadow-inner shrink-0">
+              <Factory size={28} className="text-cyan-400" />
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black truncate break-keep tracking-tight text-white drop-shadow-sm">{dept} 부서 상세 매칭 (예측)</h2>
+            </div>
+            <span className="hidden sm:inline-flex items-center bg-cyan-500/20 border border-cyan-400/50 text-cyan-50 px-4 py-1.5 rounded-full text-sm sm:text-base font-bold shadow-inner whitespace-nowrap ml-2 backdrop-blur-md">
+              총 요청: {totalReq}명
+            </span>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-all shrink-0 bg-white/5 border border-white/10"><X size={24} /></button>
+        </div>
+        <div className="p-5 sm:p-8 overflow-y-auto flex-1 bg-slate-50/50">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+            <table className="w-full text-center border-collapse min-w-[750px]">
+              <thead className="bg-slate-100/80 text-slate-600 text-sm sm:text-base border-b border-slate-200">
+                <tr>
+                  <th className="p-4 sm:p-5 font-black break-keep w-1/4 align-middle text-center">투입 직무 (요청월)</th>
+                  <th className="p-4 sm:p-5 font-black break-keep w-1/6 align-middle text-center">요청 인원</th>
+                  <th className="p-4 sm:p-5 font-black pl-8 break-keep w-2/5 align-middle text-center">자동 매칭 결과 (입국주차)</th>
+                  <th className="p-4 sm:p-5 font-black break-keep w-1/6 align-middle text-center leading-tight">
+                    진행 상태<br/>
+                    <span className="text-xs font-semibold text-slate-400 tracking-tight">({getWeekStr(currentWeek)} 기준)</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="text-sm sm:text-base">
+                {data.map((item, idx) => {
+                  const arrivedCount = item.fulfillments.filter(f => f.supplyWeek !== null && f.supplyWeek <= currentWeek).reduce((sum, f) => sum + f.count, 0);
+                  const isFullyArrived = arrivedCount >= item.reqCount && item.reqCount > 0;
+
+                  return (
+                    <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                      <td className="p-4 sm:p-5 text-slate-800 font-extrabold break-keep align-middle">
+                        <div className="flex items-center justify-center space-x-3">
+                          <Briefcase size={20} className="text-cyan-600 shrink-0" />
+                          <span className="text-base sm:text-lg whitespace-nowrap">{item.job} <span className="text-slate-400 font-semibold ml-1 whitespace-nowrap">({item.reqMonth}월)</span></span>
+                        </div>
+                      </td>
+                      <td className="p-4 sm:p-5 text-slate-800 font-black text-xl sm:text-2xl whitespace-nowrap align-middle text-center tracking-tighter">{item.reqCount}명</td>
+                      <td className="p-4 sm:p-5 align-middle text-center">
+                        {item.fulfillments.length === 0 ? (
+                          <span className="text-slate-500 font-semibold bg-slate-100 px-3 py-1.5 rounded-lg break-keep shadow-sm border border-slate-200">공급 대기중</span>
+                        ) : (
+                          <div className="space-y-2 flex flex-col items-center">
+                            {item.fulfillments.map((f, fIdx) => (
+                              <div key={fIdx} className={`flex items-center justify-center flex-wrap gap-2 font-bold px-3 py-2 rounded-xl border shadow-sm ${f.supplyWeek !== null && f.supplyWeek <= currentWeek ? 'bg-cyan-50 border-cyan-200 text-cyan-900' : 'bg-white border-slate-200 text-slate-700'}`}>
+                                <span className={`font-black whitespace-nowrap ${f.supplyWeek !== null && f.supplyWeek <= currentWeek ? 'text-cyan-700' : 'text-slate-600'}`}>{f.supplyWeek ? getWeekStr(f.supplyWeek) : '입국주차 미정'}</span> 
+                                <span className="text-slate-300 mx-1">➔</span>
+                                <span className="text-base whitespace-nowrap font-black">{f.count}명</span>
+                                {f.isFixed && <span className="text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded border border-slate-700 font-bold whitespace-nowrap shadow-sm">배치확정</span>}
+                                <span className="flex items-center text-xs bg-white/80 py-1 px-2 rounded-lg text-slate-600 border border-slate-200/60 break-keep ml-2 shadow-sm font-semibold">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded flex items-center mr-1.5 font-black whitespace-nowrap ${f.country === '베트남' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {f.country}
+                                  </span>
+                                  {f.agency}
+                                </span>
+                              </div>
+                            ))}
+                            {item.unfulfilledCount > 0 && (
+                              <div className="text-xs sm:text-sm text-rose-500 font-bold mt-2 px-2 break-keep whitespace-nowrap flex items-center"><AlertCircle size={14} className="mr-1"/> {item.unfulfilledCount}명 매칭 대기중 (공급 부족)</div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-4 sm:p-5 align-middle text-center">
+                        {isFullyArrived ? 
+                          <span className="px-4 py-1.5 rounded-full font-black bg-cyan-100 text-cyan-800 text-sm break-keep whitespace-nowrap shadow-sm border border-cyan-200">배치완료</span> : 
+                          arrivedCount > 0 ? 
+                          <span className="px-4 py-1.5 rounded-full font-black bg-blue-50 text-blue-700 text-sm break-keep whitespace-nowrap shadow-sm border border-blue-200">부분 ({arrivedCount}/{item.reqCount})</span> :
+                          <span className="px-4 py-1.5 rounded-full font-bold bg-slate-100 text-slate-500 text-sm break-keep whitespace-nowrap shadow-sm border border-slate-200">입국대기</span>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConfirmedDeptModal = ({ isOpen, onClose, selection, confirmedDeptSummary }) => {
+  if (!isOpen || !selection) return null;
+  
+  const deptData = confirmedDeptSummary.find(d => d.name === selection.dept);
+  if (!deptData) return null;
+
+  let displayInds = [];
+  if (selection.job) {
+     displayInds = deptData.jobs[selection.job]?.inds || [];
+  } else {
+     Object.values(deptData.jobs).forEach(j => displayInds.push(...j.inds));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-6xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col border border-slate-200">
+        <div className="bg-gradient-to-r from-cyan-700 to-blue-800 p-6 sm:p-8 flex justify-between items-center text-white shrink-0 gap-4 shadow-md">
+          <div className="flex items-center space-x-4 sm:space-x-5 min-w-0">
+            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm border border-white/10 shadow-inner shrink-0">
+               <UserCheck size={28} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight truncate break-keep text-white drop-shadow-md">
+                {selection.dept} 부서 확정 명단 {selection.job && <span className="text-cyan-200 ml-2 font-extrabold">- {selection.job}</span>}
+              </h2>
+            </div>
+            <span className="hidden sm:inline-flex items-center bg-black/20 border border-white/10 backdrop-blur-md px-4 py-1.5 rounded-full text-sm sm:text-base font-bold shadow-inner whitespace-nowrap ml-4">
+              입국 완료: {displayInds.length}명
+            </span>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-black/20 transition-all shrink-0 bg-black/10 border border-white/10"><X size={24} /></button>
+        </div>
+        <div className="p-0 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50">
+          {displayInds.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <Users size={64} className="mb-4 opacity-20" />
+              <p className="font-bold text-lg">해당 조건에 부합하는 확정(입국) 명단이 없습니다.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto sm:rounded-2xl border border-slate-200/60 bg-white shadow-sm">
+              <table className="w-full text-center border-collapse min-w-[850px]">
+                <thead className="bg-slate-100/80 text-slate-600 text-xs sm:text-sm border-b border-slate-200">
+                  <tr>
+                    <th className="p-2 sm:p-3 font-black align-middle w-10 border-r border-slate-200">No.</th>
+                    <th className="p-2 sm:p-3 font-black align-middle text-left border-r border-slate-200">
+                      인적사항<br/>
+                      <span className="text-[9px] sm:text-[10px] text-slate-400 font-semibold tracking-tight">성명 / 나이 / 출신</span>
+                    </th>
+                    <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200">국가 / 업체</th>
+                    <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200">투입 직무</th>
+                    <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200 bg-blue-50/50 text-blue-900">
+                      본기량 상세 점수<br/>
+                      <span className="text-[9px] sm:text-[10px] text-blue-500 font-semibold tracking-tight">취부 / 용접 / 한국어</span>
+                    </th>
+                    <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200">입국 주차</th>
+                    <th className="p-2 sm:p-3 font-black align-middle text-center border-l border-slate-200">첨부 (영상/인성)</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[13px] sm:text-sm font-medium">
+                  {displayInds.map((ind, idx) => (
+                    <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                      <td className="p-2 sm:p-3 text-slate-400 font-bold border-r border-slate-100">{idx + 1}</td>
+                      <td className="p-2 sm:p-3 text-slate-800 text-left border-r border-slate-100">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="font-extrabold whitespace-nowrap tracking-tight">{ind.name}</div>
+                          {ind.isE9 && <span className="bg-amber-100 text-amber-700 text-[9px] px-1.5 py-0.5 rounded font-black border border-amber-200 shadow-sm flex items-center"><ShieldCheck size={10} className="mr-0.5"/>E-9</span>}
+                        </div>
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 font-semibold whitespace-nowrap">
+                          <span className="font-mono text-slate-400 bg-slate-100 px-1 rounded">{ind.uid}</span>
+                          <span className="mx-1.5 text-slate-200">|</span>
+                          <span className="text-blue-700">{ind.age ? `만 ${ind.age}세` : '나이 미상'}</span>
+                        </div>
+                      </td>
+                      <td className="p-2 sm:p-3 align-middle border-r border-slate-100">
+                        <div className="flex items-center justify-center space-x-1 mb-1">
+                          <MapPin size={12} className={ind.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'} />
+                          <span className="font-bold text-slate-700 text-xs">{ind.country}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-semibold">{ind.agency} <span className="font-normal text-slate-400">({ind.track})</span></div>
+                      </td>
+                      <td className="p-2 sm:p-3 text-slate-700 font-extrabold border-r border-slate-100 text-xs">{ind.job}</td>
+                      
+                      <td className="p-2 sm:p-3 align-middle border-r border-slate-100 bg-blue-50/10">
+                        <div className="flex items-center justify-center gap-2 sm:gap-3">
+                          <div className="flex flex-col items-center w-7 sm:w-8">
+                            <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">취부</span>
+                            <span className={`font-black tracking-tighter ${Number(ind.mainChibuScore) >= 80 ? 'text-cyan-600 text-base' : 'text-slate-600 text-sm'}`}>{ind.mainChibuScore || '-'}</span>
+                          </div>
+                          <div className="w-px h-5 bg-slate-200"></div>
+                          <div className="flex flex-col items-center w-7 sm:w-8">
+                            <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">용접</span>
+                            <span className={`font-black tracking-tighter ${Number(ind.mainWeldScore) >= 80 ? 'text-cyan-600 text-base' : 'text-slate-600 text-sm'}`}>{ind.mainWeldScore || '-'}</span>
+                          </div>
+                          <div className="w-px h-5 bg-slate-200"></div>
+                          <div className="flex flex-col items-center w-7 sm:w-8">
+                            <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold mb-0.5">한국어</span>
+                            <span className={`font-black tracking-tighter ${Number(ind.mainKrScore) >= 15 ? 'text-emerald-500 text-base' : 'text-slate-600 text-sm'}`}>{ind.mainKrScore || '-'}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="p-2 sm:p-3 text-cyan-700 font-black border-r border-slate-100">{ind.entryPassWeek ? getWeekStr(ind.entryPassWeek) : '-'}</td>
+                      
+                      <td className="p-2 sm:p-3 align-middle text-center border-l border-slate-100">
+                         <div className="flex flex-row gap-1.5 items-center justify-center">
+                            {ind.videoUrl ? (
+                              <a 
+                                href={ind.videoUrl.startsWith('http') ? ind.videoUrl : `https://${ind.videoUrl}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center justify-center px-2 py-1 bg-slate-800 text-white border border-slate-700 rounded text-[10px] sm:text-[11px] font-bold hover:bg-black transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                              >
+                                <PlayCircle size={12} className="mr-1 text-cyan-400" /> 영상
+                              </a>
+                            ) : (
+                              <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
+                            )}
+                            {ind.personalityTestUrl ? (
+                              <a 
+                                href={ind.personalityTestUrl.startsWith('http') ? ind.personalityTestUrl : `https://${ind.personalityTestUrl}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center justify-center px-2 py-1 bg-white text-slate-700 border border-slate-300 rounded text-[10px] sm:text-[11px] font-bold hover:border-cyan-400 hover:text-cyan-700 transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                              >
+                                <FileText size={12} className="mr-1 text-cyan-600" /> 인성
+                              </a>
+                            ) : (
+                              <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
+                            )}
+                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AgencyDetailModal = ({ isOpen, onClose, agencyName, agencySupplyDB, individuals }) => {
+  if (!isOpen || !agencyName) return null;
+
+  const sampleAgency = agencySupplyDB.find(a => a.agency === agencyName);
+  const country = sampleAgency ? sampleAgency.country : '';
+
+  const jobMap = {};
+
+  agencySupplyDB.filter(a => a.agency === agencyName).forEach(a => {
+    if (!jobMap[a.job]) jobMap[a.job] = { expected: [], confirmed: [], totalExpected: 0, totalConfirmed: 0 };
+    const existingExp = jobMap[a.job].expected.find(e => e.week === a.supplyWeek);
+    if (existingExp) {
+      existingExp.count += a.count;
+    } else {
+      jobMap[a.job].expected.push({ week: a.supplyWeek, count: a.count });
+    }
+    jobMap[a.job].totalExpected += a.count;
+  });
+
+  individuals.filter(ind => ind.agency === agencyName && typeof ind.entryPassWeek === 'number').forEach(ind => {
+    if (!jobMap[ind.job]) jobMap[ind.job] = { expected: [], confirmed: [], totalExpected: 0, totalConfirmed: 0 };
+    const existingConf = jobMap[ind.job].confirmed.find(c => c.week === ind.entryPassWeek);
+    if (existingConf) {
+      existingConf.count++;
+    } else {
+      jobMap[ind.job].confirmed.push({ week: ind.entryPassWeek, count: 1 });
+    }
+    jobMap[ind.job].totalConfirmed += 1;
+  });
+
+  const sortWeeks = (a, b) => (a.week || 999) - (b.week || 999);
+
+  const renderWeekBadge = (week, count, type, key) => (
+    <div key={key} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold border shadow-sm ${type === 'confirmed' ? 'bg-cyan-50 border-cyan-200 text-cyan-800' : 'bg-white border-slate-200 text-slate-700'}`}>
+       <span>{week ? getWeekStr(week) : '일정 미정'}</span>
+       <span className={`w-px h-3 ${type === 'confirmed' ? 'bg-cyan-200' : 'bg-slate-200'}`}></span>
+       <span className="text-xs font-black tracking-tighter">{count}명</span>
+    </div>
+  );
+
+  const jobs = Object.keys(jobMap).sort();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col border border-slate-200">
+        <div className="bg-gradient-to-r from-slate-900 to-indigo-900 p-5 sm:p-6 flex justify-between items-center text-white shrink-0 gap-4 shadow-md">
+          <div className="flex items-center space-x-4 min-w-0">
+            <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm border border-white/10 shadow-inner shrink-0">
+              <Building size={24} className="text-indigo-400" />
+            </div>
+            <h2 className="text-lg sm:text-xl font-black truncate break-keep tracking-tight text-white drop-shadow-sm">
+              {agencyName} <span className="text-indigo-200 text-base font-semibold">({country})</span> 세부 공급 현황
+            </h2>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-all shrink-0 bg-white/5 border border-white/10"><X size={24} /></button>
+        </div>
+        
+        <div className="p-5 sm:p-8 overflow-y-auto flex-1 bg-slate-50/50">
+          {jobs.length === 0 ? (
+             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+               <Briefcase size={48} className="mb-4 opacity-20" />
+               <p className="font-bold text-lg">해당 업체의 배정 데이터가 없습니다.</p>
+             </div>
+          ) : (
+            <div className="space-y-4">
+              {jobs.map(job => {
+                const { expected, confirmed, totalExpected, totalConfirmed } = jobMap[job];
+                return (
+                  <div key={job} className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm hover:border-indigo-400 hover:shadow-md transition-all flex flex-col">
+                    <div className="flex flex-wrap items-center justify-between mb-4 gap-2 border-b border-slate-100 pb-3">
+                      <h3 className="text-base sm:text-lg font-black text-slate-800 flex items-center tracking-tight">
+                        <Briefcase size={18} className="text-indigo-500 mr-2" /> {job}
+                      </h3>
+                      <div className="flex gap-2">
+                        <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center shadow-sm">계획 <span className="ml-1.5 text-sm font-black">{totalExpected}</span>명</span>
+                        <span className="text-[11px] font-bold bg-cyan-50 text-cyan-700 px-2.5 py-1 rounded-lg border border-cyan-200 flex items-center shadow-sm">확정 <span className="ml-1.5 text-sm font-black">{totalConfirmed}</span>명</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col md:flex-row gap-4">
+                      {/* 예상 일정 */}
+                      <div className="flex-1 bg-slate-50/80 p-4 rounded-xl border border-slate-100 flex flex-col">
+                        <h4 className="text-[11px] font-black text-slate-500 mb-3 flex items-center uppercase tracking-wider">
+                          <Clock size={12} className="mr-1.5"/> 입국 예상 (공급계획)
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {expected.length > 0 
+                            ? expected.sort(sortWeeks).map((e, i) => renderWeekBadge(e.week, e.count, 'expected', i))
+                            : <span className="text-[11px] text-slate-400 font-medium">예상 일정 없음</span>}
+                        </div>
+                      </div>
+                      
+                      {/* 확정 일정 */}
+                      <div className="flex-1 bg-cyan-50/30 p-4 rounded-xl border border-cyan-100/50 flex flex-col shadow-inner">
+                        <h4 className="text-[11px] font-black text-cyan-700 mb-3 flex items-center uppercase tracking-wider">
+                          <CheckCircle2 size={12} className="mr-1.5"/> 입국 확정 (실제명단)
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {confirmed.length > 0 
+                            ? confirmed.sort(sortWeeks).map((c, i) => renderWeekBadge(c.week, c.count, 'confirmed', i))
+                            : <span className="text-[11px] text-slate-400 font-medium">확정된 인원 없음</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MONTH_MAP_DISPLAY = { 1:'JAN', 2:'FEB', 3:'MAR', 4:'APR', 5:'MAY', 6:'JUN', 7:'JUL', 8:'AUG', 9:'SEP', 10:'OCT', 11:'NOV', 12:'DEC' };
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [currentWeek, setCurrentWeek] = useState(1); 
+  const [filterStatus, setFilterStatus] = useState(null); 
+  const [selectedDept, setSelectedDept] = useState(null);
+  
+  // 관리자 모드 관련 스테이트
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState(false);
+
+  // 모달 관리 스테이트
+  const [selectedStageModal, setSelectedStageModal] = useState(null); 
+  const [selectedConfirmedDept, setSelectedConfirmedDept] = useState(null); 
+  const [selectedAgencyModal, setSelectedAgencyModal] = useState(null);
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedJobFilter, setSelectedJobFilter] = useState('전체');
+  const [allocationMode, setAllocationMode] = useState('predicted'); 
+  const [alertMessage, setAlertMessage] = useState(null);
+  
+  const showAlert = (msg) => setAlertMessage(msg);
+
+  const [baseSheetUrl, setBaseSheetUrl] = useState(() => localStorage.getItem('baseSheetUrl') || 'https://docs.google.com/spreadsheets/d/1AvAw-npblbj1es0bG3Ef43hZWM4F6Q2AzKgFvuocjAU/edit?gid=0#gid=0');
+  const [individualSheetUrl, setIndividualSheetUrl] = useState(() => localStorage.getItem('individualSheetUrl') || 'https://docs.google.com/spreadsheets/d/1njMTMyaioVS7bb_h_StFUHMRjsYg44woXSLs53KWZ8g/edit?gid=0#gid=0');
+  
+  const [deptTabName, setDeptTabName] = useState(() => localStorage.getItem('deptTabName') || 'Sheet1');
+  const [agencyTabName, setAgencyTabName] = useState(() => localStorage.getItem('agencyTabName') || 'Sheet2');
+  
+  const [individualTabName1, setIndividualTabName1] = useState(() => localStorage.getItem('individualTabName1') || '사전기량검증'); 
+  const [individualTabName2, setIndividualTabName2] = useState(() => localStorage.getItem('individualTabName2') || '본기량검증'); 
+
+  const [requestDB, setRequestDB] = useState(DEPT_REQUEST_DB_DEFAULT);
+  const [agencySupplyDB, setAgencySupplyDB] = useState(AGENCY_SUPPLY_DB_DEFAULT);
+  const [individualsDB, setIndividualsDB] = useState(INDIVIDUAL_DB_DEFAULT); 
+  
+  const [localPreData, setLocalPreData] = useState([]);
+  const [localMainData, setLocalMainData] = useState([]);
+
+  // 관리자 인증 처리
+  const handleAdminLogin = (e) => {
+    e.preventDefault();
+    if (adminPassword === '123456789') {
+      setIsAdminAuthenticated(true);
+      setShowAdminModal(false);
+      setActiveTab('data');
+      setAdminPassword('');
+      setAdminError(false);
+    } else {
+      setAdminError(true);
+    }
+  };
+
+  const mergeAndSetIndDB = (preList, mainList) => {
+    const mergedMap = new Map();
+    
+    preList.forEach(ind => {
+        const key = `${ind.name}_${ind.dob}`;
+        mergedMap.set(key, {
+            ...ind,
+            hasPreData: true,
+            mainKrScore: '', mainSkillScore: '', mainChibuScore: '', mainWeldScore: '', mainTestWeek: null, mainPassWeek: null, mainDropWeek: null,
+            entryPassWeek: null, entryDropWeek: null,
+            assignedDept: '',
+            videoUrl: null,
+            personalityTestUrl: null
+        });
+    });
+    
+    mainList.forEach(ind2 => {
+        const key = `${ind2.name}_${ind2.dob}`;
+        if (mergedMap.has(key)) {
+            const existing = mergedMap.get(key);
+            mergedMap.set(key, { 
+                ...existing, 
+                ...ind2, 
+                hasPreData: true,
+                job: ind2.job || existing.job, 
+                name: ind2.name || existing.name,
+                dob: ind2.dob || existing.dob,
+                age: ind2.age || existing.age,
+                isE9: ind2.isE9 || existing.isE9,
+                mainChibuScore: ind2.mainChibuScore || existing.mainChibuScore,
+                mainWeldScore: ind2.mainWeldScore || existing.mainWeldScore,
+                preDropWeek: existing.preDropWeek, // 보존
+                entryPassWeek: ind2.entryPassWeek,
+                entryDropWeek: ind2.entryDropWeek,
+                videoUrl: ind2.videoUrl || existing.videoUrl,
+                personalityTestUrl: ind2.personalityTestUrl || existing.personalityTestUrl
+            });
+        } else {
+            mergedMap.set(key, {
+                preKrScore: '', preSkillScore: '', preTestWeek: null, prePassWeek: null, preDropWeek: null,
+                ...ind2,
+                hasPreData: false,
+                entryPassWeek: ind2.entryPassWeek,
+                entryDropWeek: ind2.entryDropWeek,
+                videoUrl: ind2.videoUrl,
+                personalityTestUrl: ind2.personalityTestUrl
+            });
+        }
+    });
+    
+    setIndividualsDB([...Array.from(mergedMap.values())]);
+  };
+
+  const handleLocalCsvUpload = (e, type) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const parsedRows = parseCSVText(text);
+      
+      let parsedData = [];
+
+      if (type === 'pre') {
+        parsedData = parsedRows.map((cols, i) => parsePreRow(cols, i, agencySupplyDB)).filter(Boolean);
+        setLocalPreData(parsedData);
+        mergeAndSetIndDB(parsedData, localMainData);
+      } else {
+        parsedData = parsedRows.map((cols, i) => parseMainRow(cols, i, agencySupplyDB)).filter(Boolean);
+        setLocalMainData(parsedData);
+        mergeAndSetIndDB(localPreData, parsedData);
+      }
+
+      if (parsedData.length > 0) { 
+        showAlert(`✅ 로컬 CSV 파일(${type === 'pre' ? '사전기량검증' : '본기량검증'})을 성공적으로 불러왔습니다.`);
+        setActiveTab('dashboard'); 
+      } else {
+        showAlert(`❌ 유효한 데이터를 찾을 수 없습니다. 파일 양식을 확인해주세요.`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null; 
+  };
+
+  const fetchGoogleSheets = async () => {
+    if (!baseSheetUrl || !individualSheetUrl) {
+      showAlert("구글 시트 링크를 모두 입력해주세요.");
+      return;
+    }
+
+    const baseSheetId = getSheetId(baseSheetUrl);
+    const indSheetId = getSheetId(individualSheetUrl);
+
+    if (!baseSheetId || !indSheetId) {
+      showAlert("올바른 구글 시트 링크가 아닙니다. 공유 링크를 다시 확인해주세요.");
+      return;
+    }
+
+    setIsLoading(true);
+    let successCount = 0;
+    let errorDetails = [];
+    let globalParsedAgency = []; 
+
+    const checkCsvError = (text, tabName) => {
+      const lowerText = text.trim().toLowerCase();
+      if (lowerText.startsWith('<!doctype html>') || lowerText.startsWith('<html')) throw new Error('AUTH_REQUIRED');
+      if (text.includes('"status","error"') && text.includes('reqId')) throw new Error(`SHEET_NOT_FOUND:${tabName}`);
+    };
+
+    try {
+      const deptRes = await fetch(`https://docs.google.com/spreadsheets/d/${baseSheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(deptTabName)}`);
+      if (deptRes.ok) {
+        const text = await deptRes.text();
+        checkCsvError(text, deptTabName);
+        const parsedRows = parseCSVText(text);
+        const parsedDept = parsedRows.slice(1).map((cols, idx) => ({ 
+          id: idx+1, dept: cols[0], job: cols[1], reqCount: Number(cols[2]), reqMonth: Number(cols[3]) 
+        })).filter(item => item.dept && !isNaN(item.reqCount));
+        if (parsedDept.length > 0) { 
+          setRequestDB(parsedDept); 
+          successCount++; 
+          errorDetails.push(`✅ [${deptTabName}] ${parsedDept.length}건 연동`);
+        } else {
+          errorDetails.push(`❌ [${deptTabName}] 데이터를 찾을 수 없습니다.`);
+        }
+      }
+
+      const agencyRes = await fetch(`https://docs.google.com/spreadsheets/d/${baseSheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(agencyTabName)}`);
+      if (agencyRes.ok) {
+        const text = await agencyRes.text();
+        checkCsvError(text, agencyTabName);
+        const parsedRows = parseCSVText(text);
+        const parseWeek = (val) => val && !isNaN(Number(val)) ? Number(val) : null;
+        
+        const parsedAgency = parsedRows.slice(1).map((cols) => ({ 
+          country: cols[0], track: cols[1], agency: cols[2], job: cols[3], count: Number(cols[4]), 
+          week_preTest: parseWeek(cols[5]), 
+          week_mainTest: parseWeek(cols[6]), 
+          week_edu2: parseWeek(cols[7]), 
+          supplyWeek: parseWeek(cols[8]),
+          fixedDept: cols[9] && cols[9].trim() !== '미확정' && cols[9].trim() !== '' ? cols[9].trim() : null,
+          fixedCount: cols[10] && !isNaN(Number(cols[10])) ? Number(cols[10]) : Number(cols[4])
+        })).filter(item => item.agency && !isNaN(item.count));
+        
+        if (parsedAgency.length > 0) { 
+          setAgencySupplyDB(parsedAgency); 
+          globalParsedAgency = parsedAgency; 
+          successCount++; 
+          errorDetails.push(`✅ [${agencyTabName}] ${parsedAgency.length}건 연동`);
+        }
+      }
+
+      let indFetchUrl1 = `https://docs.google.com/spreadsheets/d/${indSheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(individualTabName1)}`;
+      let indFetchUrl2 = `https://docs.google.com/spreadsheets/d/${indSheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(individualTabName2)}`;
+      
+      const indRes1 = await fetch(indFetchUrl1);
+      const indRes2 = await fetch(indFetchUrl2);
+      
+      let mergedPre = [];
+      let mergedMain = [];
+      let ind1Success = false;
+      let ind2Success = false;
+
+      if (indRes1.ok) {
+          const text1 = await indRes1.text();
+          checkCsvError(text1, individualTabName1);
+          mergedPre = parseCSVText(text1).map((cols, i) => parsePreRow(cols, i, globalParsedAgency)).filter(Boolean);
+          if(mergedPre.length > 0) ind1Success = true;
+      }
+      if (indRes2.ok) {
+          const text2 = await indRes2.text();
+          checkCsvError(text2, individualTabName2);
+          mergedMain = parseCSVText(text2).map((cols, i) => parseMainRow(cols, i, globalParsedAgency)).filter(Boolean);
+          if(mergedMain.length > 0) ind2Success = true;
+      }
+
+      if (ind1Success || ind2Success) {
+          mergeAndSetIndDB(mergedPre, mergedMain);
+          successCount += (ind1Success ? 1 : 0) + (ind2Success ? 1 : 0);
+          errorDetails.push(`✅ [명단 연동] 사전평가 ${mergedPre.length}명, 본평가 ${mergedMain.length}명 병합 성공`);
+      } else {
+          errorDetails.push(`❌ [명단 연동] 개인 명단 데이터를 양쪽 탭에서 모두 찾을 수 없습니다.`);
+      }
+
+      if (successCount >= 3) {
+        showAlert(`🎉 모든 데이터가 완벽하게 동기화되었습니다!\n\n${errorDetails.join('\n')}`);
+        localStorage.setItem('baseSheetUrl', baseSheetUrl);
+        localStorage.setItem('individualSheetUrl', individualSheetUrl);
+        localStorage.setItem('deptTabName', deptTabName);
+        localStorage.setItem('agencyTabName', agencyTabName);
+        localStorage.setItem('individualTabName1', individualTabName1);
+        localStorage.setItem('individualTabName2', individualTabName2);
+      } else {
+        showAlert(`⚠️ 동기화 부분 실패\n\n${errorDetails.join('\n')}\n\n※ 접근 권한을 확인해주세요.`);
+      }
+    } catch (err) {
+      if (err.message === 'AUTH_REQUIRED') {
+        showAlert('❌ [권한 오류] 구글 시트 접근 권한이 없습니다.\n시트 우측 상단의 [공유] 설정에서 "제한됨"을 "링크가 있는 모든 사용자(뷰어)"로 변경해 주세요.');
+      } else if (err.message.includes('SHEET_NOT_FOUND')) {
+        showAlert(`❌ [탭 이름 오류] 탭을 찾을 수 없습니다.\n화면 하단의 탭 이름이 정확한지 확인해 주세요.`);
+      } else {
+        showAlert(`❌ 예상치 못한 오류 발생:\n${err.message}`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { 
+    if (baseSheetUrl && individualSheetUrl) fetchGoogleSheets(); 
+    const currentIsoWeek = getIsoWeek(new Date());
+    setCurrentWeek(currentIsoWeek > 52 ? 52 : currentIsoWeek);
+  }, []);
+
+  const individualsWithDept = useMemo(() => assignDepartments(individualsDB, requestDB), [individualsDB, requestDB]);
+  const allocatedResults = useMemo(() => autoAllocate(requestDB, agencySupplyDB), [requestDB, agencySupplyDB]);
+  
+  const overviewTotal = useMemo(() => agencySupplyDB.reduce((sum, item) => sum + item.count, 0), [agencySupplyDB]);
+  const completedCount = useMemo(() => agencySupplyDB.filter(item => item.supplyWeek !== null && item.supplyWeek <= currentWeek).reduce((sum, item) => sum + item.count, 0), [currentWeek, agencySupplyDB]);
+  const plannedCount = overviewTotal - completedCount;
+
+  const sortedSupplyWeeks = useMemo(() => {
+    const weeks = agencySupplyDB.map(item => item.supplyWeek).filter(w => w !== null);
+    return Array.from(new Set(weeks)).sort((a, b) => a - b);
+  }, [agencySupplyDB]);
+
+  const deptSummary = useMemo(() => {
+    const summary = {};
+    allocatedResults.forEach(item => {
+      let matchedCount = 0;
+      let arrivedCount = 0;
+      let plannedArrivalCount = item.unfulfilledCount; 
+      
+      item.fulfillments.forEach(f => {
+        matchedCount += f.count;
+        if (f.supplyWeek !== null && f.supplyWeek <= currentWeek) arrivedCount += f.count;
+        else plannedArrivalCount += f.count;
+      });
+      
+      if (filterStatus === 'completed' && arrivedCount === 0) return;
+      if (filterStatus === 'planned' && plannedArrivalCount === 0) return;
+      
+      if (!summary[item.dept]) summary[item.dept] = { name: item.dept, totalReq: 0, totalMatched: 0, totalArrived: 0, totalPlanned: 0, jobs: {} };
+      
+      summary[item.dept].totalReq += item.reqCount;
+      summary[item.dept].totalMatched += matchedCount;
+      summary[item.dept].totalArrived += arrivedCount;
+      summary[item.dept].totalPlanned += plannedArrivalCount;
+      
+      if (!summary[item.dept].jobs[item.job]) summary[item.dept].jobs[item.job] = { req: 0, matched: 0, arr: 0, plan: 0 };
+      summary[item.dept].jobs[item.job].req += item.reqCount;
+      summary[item.dept].jobs[item.job].matched += matchedCount;
+      summary[item.dept].jobs[item.job].arr += arrivedCount;
+      summary[item.dept].jobs[item.job].plan += plannedArrivalCount;
+    });
+    return Object.values(summary).sort((a, b) => b.totalReq - a.totalReq);
+  }, [currentWeek, filterStatus, allocatedResults]);
+
+  const confirmedDeptSummary = useMemo(() => {
+    const summary = {};
+    const arrivedInds = individualsWithDept.filter(ind => {
+      const status = getIndividualStatus(ind, currentWeek);
+      return status.stage === '입국' && !status.isDropped;
+    });
+
+    requestDB.forEach(req => {
+      if (!summary[req.dept]) {
+        summary[req.dept] = { name: req.dept, totalReq: 0, totalArrived: 0, jobs: {} };
+      }
+      summary[req.dept].totalReq += req.reqCount;
+      if (!summary[req.dept].jobs[req.job]) {
+        summary[req.dept].jobs[req.job] = { req: 0, arr: 0, inds: [] };
+      }
+      summary[req.dept].jobs[req.job].req += req.reqCount;
+    });
+
+    arrivedInds.forEach(ind => {
+      const dept = ind.displayDept || '대기(TBD)';
+      if (!summary[dept]) {
+        summary[dept] = { name: dept, totalReq: 0, totalArrived: 0, jobs: {} };
+      }
+      summary[dept].totalArrived += 1;
+      
+      if (!summary[dept].jobs[ind.job]) {
+        summary[dept].jobs[ind.job] = { req: 0, arr: 0, inds: [] };
+      }
+      summary[dept].jobs[ind.job].arr += 1;
+      summary[dept].jobs[ind.job].inds.push(ind);
+    });
+
+    return Object.values(summary).sort((a, b) => b.totalReq - a.totalReq);
+  }, [individualsWithDept, currentWeek, requestDB]);
+
+  const filteredAgenciesByStatus = useMemo(() => agencySupplyDB.filter(item => {
+    if (filterStatus === 'completed') return item.supplyWeek !== null && item.supplyWeek <= currentWeek;
+    if (filterStatus === 'planned') return item.supplyWeek === null || item.supplyWeek > currentWeek; 
+    return true;
+  }), [currentWeek, filterStatus, agencySupplyDB]);
+
+  const availableJobs = useMemo(() => ['전체', ...Array.from(new Set(filteredAgenciesByStatus.map(item => item.job)))], [filteredAgenciesByStatus]);
+  const sourceSummary = useMemo(() => {
+    const sum = { country: {}, track: {}, agency: {} };
+    const agenciesToProcess = filteredAgenciesByStatus.filter(item => selectedJobFilter === '전체' || item.job === selectedJobFilter);
+    agenciesToProcess.forEach(item => {
+      sum.country[item.country] = (sum.country[item.country] || 0) + item.count;
+      sum.track[item.track] = (sum.track[item.track] || 0) + item.count;
+      if (!sum.agency[item.agency]) sum.agency[item.agency] = { count: 0, country: item.country };
+      sum.agency[item.agency].count += item.count;
+    });
+    return {
+      totalCount: agenciesToProcess.reduce((acc, curr) => acc + curr.count, 0),
+      country: Object.entries(sum.country).map(([n, v]) => ({ name: n, value: v })),
+      track: Object.entries(sum.track).map(([n, v]) => ({ name: n, value: v })),
+      agency: Object.entries(sum.agency).map(([n, data]) => ({ name: n, value: data.count, country: data.country })).sort((a, b) => b.value - a.value)
+    };
+  }, [filteredAgenciesByStatus, selectedJobFilter]);
+
+  const toggleFilter = (status) => setFilterStatus(filterStatus === status ? null : status);
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] font-pretendard pb-24 overflow-x-hidden text-slate-800 break-keep relative antialiased selection:bg-cyan-200 selection:text-cyan-900">
+      
+      {/* DX 폰트 및 커스텀 스타일 (글래스모피즘, 배경 패턴) */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+        .font-pretendard { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* DX Dot Grid Background */
+        body {
+          background-color: #f8fafc;
+          background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+          background-size: 24px 24px;
+        }
+
+        /* Glassmorphism Classes */
+        .dx-glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+        .dx-dark-glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
+      `}} />
+
+      {/* 모달: 관리자 인증 */}
+      {showAdminModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-8 sm:p-10 max-w-sm w-full shadow-[0_0_50px_-12px_rgba(6,182,212,0.4)] relative overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="absolute -right-8 -top-8 text-cyan-100 opacity-20 pointer-events-none">
+              <Lock size={150} />
+            </div>
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <div className="bg-slate-900 text-white p-4 rounded-2xl mb-5 shadow-lg border border-slate-700">
+                <ShieldCheck size={32} className="text-cyan-400"/>
+              </div>
+              <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">관리자 인증</h3>
+              <p className="text-sm text-slate-500 font-medium mb-6">데이터 연동 및 시스템 설정을 변경하려면<br/>관리자 비밀번호를 입력하세요.</p>
+              
+              <form onSubmit={handleAdminLogin} className="w-full">
+                <div className="relative w-full mb-6">
+                  <input 
+                    type="password" 
+                    value={adminPassword} 
+                    onChange={e => {setAdminPassword(e.target.value); setAdminError(false);}} 
+                    placeholder="비밀번호 입력" 
+                    className={`w-full p-4 pl-12 border-2 ${adminError ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} rounded-xl focus:border-cyan-500 focus:bg-white outline-none font-bold text-slate-700 transition-all`}
+                    autoFocus
+                  />
+                  <Lock size={20} className={`absolute left-4 top-1/2 transform -translate-y-1/2 ${adminError ? 'text-rose-400' : 'text-slate-400'}`}/>
+                  {adminError && <p className="text-xs text-rose-500 font-bold mt-2 text-left absolute -bottom-5">비밀번호가 일치하지 않습니다.</p>}
+                </div>
+                
+                <div className="flex gap-3 mt-8">
+                  <button type="button" onClick={() => {setShowAdminModal(false); setAdminError(false); setAdminPassword('');}} className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">취소</button>
+                  <button type="submit" className="flex-1 py-3.5 bg-gradient-to-r from-slate-800 to-slate-900 text-white rounded-xl font-bold shadow-md hover:shadow-lg hover:from-slate-700 hover:to-slate-800 transition-all border border-slate-700">접속하기</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Container */}
+      <div className="max-w-[1600px] mx-auto pt-6 sm:pt-10">
+        
+        {/* Header - DX Command Center Style */}
+        <header className="bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#0f172a] p-6 sm:p-10 rounded-[2rem] mb-8 sm:mb-12 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 shadow-2xl relative overflow-hidden border border-slate-800/50">
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
+          {/* Glowing Accents */}
+          <div className="absolute -top-24 -left-24 w-64 h-64 bg-cyan-600 rounded-full mix-blend-multiply filter blur-[80px] opacity-40"></div>
+          <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-[80px] opacity-40"></div>
+
+          <div className="relative z-10 flex items-center space-x-4 sm:space-x-5">
+            <div className="bg-cyan-500/10 p-3 sm:p-4 rounded-2xl border border-cyan-400/20 backdrop-blur-md shadow-[0_0_20px_rgba(6,182,212,0.3)] shrink-0 group hover:bg-cyan-500/20 transition-all cursor-default">
+              <Ship className="text-cyan-400 w-8 h-8 sm:w-10 sm:h-10 group-hover:scale-110 transition-transform duration-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tighter drop-shadow-md mb-1.5 flex items-center flex-wrap gap-2">
+                직영 E-7 수급 관리 <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">DX 대시보드</span>
+                <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-bold uppercase tracking-wider backdrop-blur-sm">Live System</span>
+              </h1>
+              <p className="text-xs sm:text-sm text-blue-200/80 font-medium flex items-center tracking-tight">
+                실시간 수급현황 추적 및 부서 자동 매칭 엔진 <span className="mx-2 opacity-30">|</span> Multi-Source DB Sync
+              </p>
+            </div>
+          </div>
+          
+          <div className="relative z-10 flex dx-dark-glass p-1.5 rounded-2xl shrink-0 w-full lg:w-auto shadow-inner">
+            <button onClick={() => setActiveTab('dashboard')} className={`flex-1 lg:flex-none justify-center px-6 py-3.5 rounded-xl text-sm sm:text-base font-bold transition-all duration-300 ${activeTab === 'dashboard' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>📊 대시보드</button>
+            <button onClick={() => { if(isAdminAuthenticated) setActiveTab('data'); else setShowAdminModal(true); }} className={`flex-1 lg:flex-none justify-center px-6 py-3.5 flex items-center rounded-xl text-sm sm:text-base font-bold transition-all duration-300 ${activeTab === 'data' ? 'bg-cyan-600 text-white shadow-[0_0_15px_rgba(8,145,178,0.5)] border border-cyan-400/50' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Settings2 size={18} className="mr-2"/> ⚙️ 관리자 설정</button>
+          </div>
+        </header>
+
+        {activeTab === 'dashboard' && (
+          <div className="animate-in fade-in zoom-in-95 duration-500 slide-in-from-bottom-4">
+            <ActualStagePipeline 
+              individuals={individualsWithDept} 
+              onStageClick={(stage, isDropView) => setSelectedStageModal({ stage, showDropped: isDropView })} 
+              currentWeek={currentWeek} 
+            />
+
+            <div className="dx-glass p-6 sm:p-10 rounded-[2rem] border border-slate-200 shadow-sm mb-8 sm:mb-12 relative overflow-hidden">
+              <div className="absolute top-0 right-0 bg-gradient-to-bl from-cyan-50 to-transparent w-64 h-64 rounded-bl-full pointer-events-none opacity-50"></div>
+              <div className="absolute top-4 right-6 text-slate-900 font-black text-7xl md:text-9xl opacity-[0.03] pointer-events-none select-none tracking-tighter">
+                {MONTH_MAP_DISPLAY[WEEK_MAP[currentWeek - 1]?.m] || WEEK_MAP[currentWeek - 1]?.m}
+              </div>
+              
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 relative z-10 gap-6">
+                <div className="flex items-center space-x-4">
+                  <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-md border border-slate-700">
+                    <CalendarClock className="w-6 h-6 sm:w-8 sm:h-8 text-cyan-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight">타임라인 기반 부서 자동 매칭</h3>
+                    <span className="text-xs sm:text-sm text-slate-500 font-semibold mt-0.5">슬라이더를 이동하여 미래 시점의 진척도와 배정 결과를 시뮬레이션 하세요.</span>
+                  </div>
+                </div>
+                <div className="flex w-full md:w-auto items-center justify-between md:justify-end">
+                  <button onClick={() => setCurrentWeek(getIsoWeek(new Date()))} className="flex items-center text-sm sm:text-base font-bold bg-white border border-slate-200 text-slate-700 px-6 py-3 rounded-xl hover:border-cyan-400 hover:text-cyan-700 hover:shadow-md transition-all">
+                    <CalendarClock size={18} className="mr-2" /> 현재 주차로 복귀
+                  </button>
+                </div>
+              </div>
+              
+              <div className="w-full overflow-x-auto hide-scrollbar bg-slate-100/50 rounded-2xl border border-slate-200/60 pt-8 pb-10 relative z-20 shadow-inner">
+                <div className="min-w-[800px] px-8 sm:px-12 relative">
+                  <input type="range" min="1" max="52" step="1" value={currentWeek} onChange={(e) => setCurrentWeek(Number(e.target.value))} className="w-full h-3 sm:h-4 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-800 outline-none shadow-inner" />
+                  <div className="relative w-full h-20 mt-3 text-xs font-bold text-slate-400">
+                    {Array.from({length: 52}, (_, i) => i + 1).map(week => {
+                      const isMonthFirst = isMonthStart(week);
+                      const isCurrent = week === currentWeek;
+                      const supplyIndex = sortedSupplyWeeks.indexOf(week);
+                      const isMajor = supplyIndex !== -1;
+                      
+                      return (
+                        <div key={week} onClick={() => setCurrentWeek(week)} className={`absolute flex flex-col items-center transform -translate-x-1/2 cursor-pointer group ${isCurrent ? 'z-40' : isMajor ? 'z-30' : 'z-10'}`} style={{ left: `${((week-1)/51)*100}%`, height: '100%' }}>
+                          <div className={`transition-all duration-300 rounded-full ${isCurrent ? 'h-6 bg-slate-800 w-1.5' : isMajor ? 'h-4 bg-cyan-500 w-1' : isMonthFirst ? 'h-3 bg-slate-400 w-[2px]' : 'h-1.5 bg-slate-300 w-[2px]'}`}></div>
+                          
+                          {isCurrent ? (
+                            <div className="mt-3 absolute top-5 transform -translate-x-1/2 flex flex-col items-center">
+                              {isMajor && (
+                                <span className="mb-1.5 whitespace-nowrap bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded text-[10px] font-black border border-cyan-300 shadow-sm animate-in fade-in zoom-in flex items-center">
+                                  🎉 {supplyIndex + 1}차 입국
+                                </span>
+                              )}
+                              <span className="block whitespace-nowrap bg-slate-800 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-black shadow-lg border border-slate-700">
+                                {getWeekStr(week)}
+                              </span>
+                            </div>
+                          ) : isMajor ? (
+                             <div className="mt-2 absolute top-3 transform -translate-x-1/2 flex flex-col items-center">
+                                <span className="mt-1 whitespace-nowrap text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded text-[10px] font-extrabold border border-cyan-200 shadow-sm group-hover:bg-cyan-100 transition-colors">
+                                  {supplyIndex + 1}차
+                                </span>
+                             </div>
+                          ) : isMonthFirst ? (
+                            <span className="mt-2 text-[10px] sm:text-xs text-slate-400 font-bold absolute top-3 transform -translate-x-1/2">
+                              {getMonthStr(week)}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-8 mb-8 sm:mb-12">
+              <StatCard title="총 공급 계획 인원" value={`${overviewTotal}명`} subtitle="올해 목표 합계" icon={Users} colorClass="bg-gradient-to-br from-slate-700 to-slate-900" onClick={() => toggleFilter(null)} isSelected={filterStatus === null} activeStatus={filterStatus !== null} />
+              <StatCard title="매칭 및 입국 완료" value={`${completedCount}명`} subtitle={`${getWeekStr(currentWeek)} 누적 기준`} icon={CheckCircle2} colorClass="bg-gradient-to-br from-cyan-500 to-blue-600" onClick={() => toggleFilter('completed')} isSelected={filterStatus === 'completed'} activeStatus={filterStatus !== null} />
+              <StatCard title="향후 입국 예정" value={`${plannedCount}명`} subtitle={`${getWeekStr(currentWeek)} 이후 분`} icon={Clock} colorClass="bg-gradient-to-br from-blue-400 to-indigo-500" onClick={() => toggleFilter('planned')} isSelected={filterStatus === 'planned'} activeStatus={filterStatus !== null} />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8 mb-10">
+              <div className="xl:col-span-2 dx-glass rounded-[2rem] border border-slate-200 shadow-sm flex flex-col min-h-[500px] overflow-hidden">
+                <div className="p-6 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-white/50 gap-4 flex-wrap">
+                  <div className="flex items-center flex-wrap gap-3">
+                    <div className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 shrink-0"><Building2 size={24} className="text-slate-700" /></div>
+                    <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight flex items-center flex-wrap gap-2">
+                      부서 배치 대시보드
+                      {filterStatus === 'completed' && allocationMode === 'predicted' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">매칭/입국 완료 기준</span>}
+                      {filterStatus === 'planned' && allocationMode === 'predicted' && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 shadow-sm ml-2">향후 입국 예정 기준</span>}
+                    </h3>
+                  </div>
+                  <div className="flex bg-slate-100/80 p-1.5 rounded-xl shrink-0 shadow-inner border border-slate-200/50">
+                    <button onClick={() => setAllocationMode('predicted')} className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${allocationMode === 'predicted' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>예측 (공급계획)</button>
+                    <button onClick={() => setAllocationMode('confirmed')} className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${allocationMode === 'confirmed' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'}`}>확정 (실제명단)</button>
+                  </div>
+                </div>
+                <div className="p-5 sm:p-8 grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-4 sm:gap-6 max-h-[650px] overflow-y-auto bg-slate-50/30 hide-scrollbar">
+                  {allocationMode === 'predicted' ? (
+                    deptSummary.length === 0 ? (
+                      <div className="col-span-full flex flex-col items-center justify-center text-slate-400 py-16"><Factory size={48} className="opacity-20 mb-4" /><p className="font-semibold">해당 조건의 부서 데이터가 없습니다.</p></div>
+                    ) : (
+                      deptSummary.map((dept, idx) => {
+                        const matchedPercent = Math.min(100, Math.round((dept.totalMatched / dept.totalReq) * 100)) || 0;
+                        const arrivedPercent = Math.min(100, Math.round((dept.totalArrived / dept.totalReq) * 100)) || 0;
+                        
+                        const displayTotal = filterStatus === 'completed' ? dept.totalArrived : filterStatus === 'planned' ? dept.totalPlanned : dept.totalMatched;
+                        
+                        return (
+                          <div key={idx} onClick={() => setSelectedDept(dept.name)} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-cyan-400 hover:shadow-[0_10px_20px_-10px_rgba(6,182,212,0.3)] cursor-pointer transition-all flex flex-col relative group">
+                            <div className="flex flex-wrap justify-between items-center mb-3 relative z-10 gap-x-2 gap-y-2">
+                              <h4 className="text-base sm:text-lg font-black text-slate-800 leading-normal whitespace-nowrap tracking-tight group-hover:text-cyan-700 transition-colors">
+                                {dept.name}
+                                <ChevronRight size={18} className="inline-block text-slate-300 ml-0.5 align-text-bottom group-hover:text-cyan-400 transition-colors" />
+                              </h4>
+                              <div className="flex items-baseline justify-end gap-1 whitespace-nowrap">
+                                <span className="text-2xl font-black text-slate-800 tracking-tighter leading-none group-hover:text-cyan-600 transition-colors">{displayTotal}</span>
+                                <span className="text-xs text-slate-400 font-bold ml-0.5">/ {dept.totalReq}명</span>
+                              </div>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-2.5 mb-2 flex overflow-hidden relative z-10 shadow-inner">
+                              <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${arrivedPercent}%` }} title={`입국완료: ${dept.totalArrived}명`}></div>
+                              <div className="bg-blue-300 h-full transition-all duration-500" style={{ width: `${matchedPercent - arrivedPercent}%` }} title={`입국예정: ${dept.totalMatched - dept.totalArrived}명`}></div>
+                            </div>
+                            <div className="flex justify-between text-[10px] sm:text-xs font-bold text-slate-400 mb-4 px-1">
+                              <span>입국완료 <span className="text-cyan-600 ml-0.5">{dept.totalArrived}</span></span>
+                              <span>예정 <span className="text-blue-500 ml-0.5">{dept.totalPlanned}</span></span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 relative z-10">
+                              {Object.entries(dept.jobs).map(([job, stats]) => {
+                                const jobDisplay = filterStatus === 'completed' ? stats.arr : filterStatus === 'planned' ? stats.plan : stats.matched;
+                                return (
+                                  <span key={job} className="text-[11px] font-bold bg-slate-50 text-slate-600 px-2.5 py-1 rounded-md border border-slate-100">
+                                    {job} <span className="ml-1.5 text-slate-800 font-black">{jobDisplay}/{stats.req}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })
+                    )
+                  ) : (
+                    confirmedDeptSummary.length === 0 ? (
+                      <div className="col-span-full flex flex-col items-center justify-center text-slate-400 py-16"><Factory size={48} className="opacity-20 mb-4" /><p className="font-semibold">해당 조건의 부서 데이터가 없습니다.</p></div>
+                    ) : (
+                      confirmedDeptSummary.map((dept, idx) => {
+                        const arrivedPercent = Math.min(100, Math.round((dept.totalArrived / dept.totalReq) * 100)) || 0;
+                        
+                        return (
+                          <div key={idx} onClick={() => setSelectedConfirmedDept({dept: dept.name, job: null})} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-slate-400 hover:shadow-[0_10px_20px_-10px_rgba(15,23,42,0.2)] cursor-pointer transition-all flex flex-col relative group">
+                            <div className="flex flex-wrap justify-between items-center mb-3 relative z-10 gap-x-2 gap-y-2">
+                              <h4 className="text-base sm:text-lg font-black text-slate-800 leading-normal whitespace-nowrap tracking-tight group-hover:text-slate-900 transition-colors">
+                                {dept.name}
+                                <ChevronRight size={18} className="inline-block text-slate-300 ml-0.5 align-text-bottom group-hover:text-slate-500 transition-colors" />
+                              </h4>
+                              <div className="flex items-baseline justify-end gap-1 whitespace-nowrap">
+                                <span className="text-2xl font-black text-slate-800 tracking-tighter leading-none group-hover:text-black transition-colors">{dept.totalArrived}</span>
+                                <span className="text-xs text-slate-400 font-bold ml-0.5">/ {dept.totalReq}명</span>
+                              </div>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-2.5 mb-2 flex overflow-hidden relative z-10 shadow-inner">
+                              <div className="bg-slate-800 h-full transition-all duration-500" style={{ width: `${arrivedPercent}%` }} title={`입국완료: ${dept.totalArrived}명`}></div>
+                            </div>
+                            <div className="flex justify-between text-[10px] sm:text-xs font-bold text-slate-400 mb-4 px-1">
+                              <span>실제 입국 <span className="text-slate-800 ml-0.5">{dept.totalArrived}</span></span>
+                            </div>
+                            <div className="flex flex-wrap gap-2 relative z-10">
+                              {Object.entries(dept.jobs).map(([job, stats]) => {
+                                return (
+                                  <button key={job} onClick={(e) => { e.stopPropagation(); setSelectedConfirmedDept({dept: dept.name, job: job}); }} className="text-[11px] font-bold bg-slate-50 text-slate-600 px-2.5 py-1 rounded-md border border-slate-100 hover:bg-slate-800 hover:border-slate-800 hover:text-white transition-colors cursor-pointer flex items-center shadow-sm">
+                                    {job} <span className="ml-1.5 font-black">{stats.arr}/{stats.req}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="dx-glass rounded-[2rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                <div className="p-6 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-white/50">
+                  <div className="flex items-center flex-wrap gap-3">
+                    <div className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 shrink-0"><Globe size={24} className="text-slate-700" /></div>
+                    <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight flex items-center flex-wrap gap-2">
+                      공급 출처 관제
+                      {filterStatus === 'completed' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">입국 완료 기준</span>}
+                      {filterStatus === 'planned' && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 shadow-sm ml-2">향후 예정 기준</span>}
+                    </h3>
+                  </div>
+                </div>
+                <div className="px-6 sm:px-8 py-4 border-b border-slate-100 bg-slate-50/80 overflow-x-auto hide-scrollbar">
+                  <div className="flex space-x-2 w-max">
+                    {availableJobs.map(job => (
+                      <button key={job} onClick={() => setSelectedJobFilter(job)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedJobFilter === job ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>
+                        {job}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-6 sm:p-8 flex-1 overflow-y-auto max-h-[600px] hide-scrollbar">
+                  {sourceSummary.agency.length === 0 ? <p className="text-center text-slate-400 py-16 font-semibold">해당 조건의 데이터가 없습니다.</p> : (
+                    <>
+                      <div className="flex flex-col sm:flex-row mb-8 border-b border-slate-100 pb-8 gap-8">
+                        <div className="w-full sm:w-1/2 flex flex-col items-center">
+                          <span className="text-xs font-bold text-slate-500 mb-2 bg-slate-100 px-3 py-1 rounded-lg">국가 비중</span>
+                          <div className="w-full h-[180px]">
+                            <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={sourceSummary.country} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" paddingAngle={5} stroke="none">{sourceSummary.country.map((e, i) => <Cell key={i} fill={['#0284c7', '#0ea5e9'][i%2]} />)}</Pie><RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/><Legend verticalAlign="bottom" height={36}/></PieChart></ResponsiveContainer>
+                          </div>
+                        </div>
+                        <div className="w-full sm:w-1/2 flex flex-col items-center sm:border-l border-slate-100">
+                          <span className="text-xs font-bold text-slate-500 mb-2 bg-slate-100 px-3 py-1 rounded-lg">트랙 비중</span>
+                          <div className="w-full h-[180px]">
+                            <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={sourceSummary.track} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" paddingAngle={5} stroke="none">{sourceSummary.track.map((e, i) => <Cell key={i} fill={['#0f172a', '#334155'][i%2]} />)}</Pie><RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/><Legend verticalAlign="bottom" height={36}/></PieChart></ResponsiveContainer>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        {sourceSummary.agency.map((agency, idx) => {
+                          const width = `${(agency.value / sourceSummary.agency[0].value) * 100}%`;
+                          return (
+                            <div key={idx} 
+                                 onClick={() => setSelectedAgencyModal(agency.name)}
+                                 className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
+                              <div className="flex flex-wrap justify-between items-center text-sm font-bold text-slate-800 mb-3 gap-2">
+                                <span className="flex items-center leading-normal whitespace-nowrap">
+                                  <MapPin size={16} className={`mr-2 shrink-0 ${agency.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'}`}/>
+                                  <span className="font-black text-base group-hover:text-slate-900 transition-colors">{agency.name}</span>
+                                  <span className="text-slate-400 ml-2 font-semibold text-xs">({agency.country})</span>
+                                </span>
+                                <span className="font-black text-slate-800 text-base shrink-0">{agency.value}명</span>
+                              </div>
+                              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden shadow-inner">
+                                <div className="bg-slate-800 h-full rounded-full transition-all duration-500" style={{ width }}></div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 데이터 연동 설정 (관리자 전용 영역) */}
+        {activeTab === 'data' && isAdminAuthenticated && (
+          <div className="animate-in fade-in duration-500 max-w-6xl mx-auto slide-in-from-bottom-4">
+            
+            <div className="dx-glass p-8 sm:p-12 rounded-[2rem] border border-cyan-200/50 shadow-xl mb-8 relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+                <ShieldCheck size={200} className="text-slate-900" />
+              </div>
+              <div className="flex items-center space-x-4 mb-4 relative z-10">
+                <div className="bg-slate-900 p-3 rounded-2xl shadow-md border border-slate-700">
+                  <ShieldCheck className="text-cyan-400 w-8 h-8" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">관리자 시스템 설정</h2>
+              </div>
+              <p className="text-slate-500 font-medium mb-10 relative z-10 text-base">
+                구글 멀티 시트 동기화 설정 및 로컬 데이터 강제 덮어쓰기 기능을 제공합니다.
+              </p>
+
+              {/* 로컬 업로드 영역 */}
+              <div className="bg-slate-50/50 rounded-3xl p-6 sm:p-8 border border-slate-200 mb-10 relative z-10">
+                <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center"><Upload size={20} className="mr-2 text-slate-500"/> 로컬 CSV 강제 덮어쓰기 (수동)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-6 rounded-2xl bg-white border border-slate-200 flex flex-col items-start shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+                    <h4 className="font-black text-slate-800 mb-1.5 text-lg">사전기량검증 CSV</h4>
+                    <p className="text-sm text-slate-500 font-medium mb-6">사전평가 데이터가 담긴 내보내기 파일을 선택하세요.</p>
+                    <label className="w-full text-center cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 px-6 py-4 rounded-xl font-bold transition-all shadow-sm">
+                      사전평가 파일 선택
+                      <input type="file" accept=".csv" onChange={(e) => handleLocalCsvUpload(e, 'pre')} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="p-6 rounded-2xl bg-white border border-slate-200 flex flex-col items-start shadow-sm transition-all hover:shadow-md hover:border-slate-300">
+                    <h4 className="font-black text-slate-800 mb-1.5 text-lg">본기량검증 CSV</h4>
+                    <p className="text-sm text-slate-500 font-medium mb-6">본평가 및 배치 데이터가 담긴 파일을 선택하세요.</p>
+                    <label className="w-full text-center cursor-pointer bg-slate-800 hover:bg-slate-900 text-white px-6 py-4 rounded-xl font-bold transition-all shadow-sm border border-slate-700">
+                      본평가 파일 선택
+                      <input type="file" accept=".csv" onChange={(e) => handleLocalCsvUpload(e, 'main')} className="hidden" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 가이드 영역 */}
+              <div className="bg-amber-50/80 border border-amber-200/60 rounded-3xl p-6 sm:p-8 mb-10 flex flex-col gap-2 shadow-sm relative z-10">
+                 <h3 className="text-lg font-black text-amber-900 flex items-center tracking-tight"><AlertCircle className="w-5 h-5 mr-2 text-amber-600"/> 데이터 무결성 가이드 (탈락일자 표기법)</h3>
+                 <p className="text-sm text-amber-800 font-medium leading-relaxed">
+                   탈락 여부를 기록할 때 '탈락'이라는 글자 대신 <strong>탈락한 날짜(예: 3/15)</strong>를 입력하시면 타임라인 슬라이더의 주차 이동에 따라 탈락 인원도 동적으로 변동되어 표시됩니다.
+                 </p>
+                 <ul className="list-disc list-inside text-sm text-amber-800 font-bold ml-4 mt-3 space-y-2">
+                   <li>사전기량검증: 합격일자는 <strong>Z열</strong> / 사전기량 탈락일자는 <strong>AA열</strong>에 날짜 기재</li>
+                   <li>본기량검증(본평가): 본기량 합격일자 <strong>Z열</strong> / 본기량 탈락일자 <strong>AA열</strong>에 날짜 기재</li>
+                   <li>본기량검증(입국): 입국일자 <strong>AB열</strong> / 입국 탈락일자 <strong>AC열</strong>에 날짜 기재</li>
+                   <li>본기량검증(인성검사): 검사지 URL은 <strong>AG열</strong>에 기재</li>
+                 </ul>
+              </div>
+
+              {/* 구글 시트 연동 설정 영역 */}
+              <div className="bg-slate-900 rounded-3xl p-6 sm:p-10 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-xl relative z-10 border border-slate-800">
+                <div className="flex items-start space-x-5">
+                  <div className="bg-white/10 p-3 rounded-2xl border border-white/10"><RefreshCw className="text-cyan-400 w-8 h-8" /></div>
+                  <div>
+                    <h3 className="text-xl sm:text-2xl font-black text-white mb-2 tracking-tight">클라우드 DB 동기화 실행</h3>
+                    <p className="text-slate-400 font-medium text-sm sm:text-base">아래에 입력된 두 개의 구글 시트 주소에서 실시간으로 데이터를 끌어옵니다.</p>
+                  </div>
+                </div>
+                <button onClick={fetchGoogleSheets} disabled={isLoading} className="w-full lg:w-auto flex items-center justify-center px-10 py-5 bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-black rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all disabled:opacity-50 text-lg tracking-tight">
+                  {isLoading ? <RefreshCw className="animate-spin mr-3" /> : <Database className="mr-3" />}
+                  동기화 시작
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-8 relative z-10">
+                <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <Database className="text-slate-800" />
+                    <h2 className="text-xl font-black text-slate-800 tracking-tight">1. 부서 요청 및 공급 계획 시트 (마스터 DB)</h2>
+                  </div>
+                  <input type="text" value={baseSheetUrl} onChange={e => setBaseSheetUrl(e.target.value)} placeholder="Sheet1, Sheet2가 포함된 시트 주소" className="w-full p-4 border-2 border-slate-200 rounded-2xl focus:border-cyan-500 outline-none font-mono text-sm text-slate-700 mb-6 bg-slate-50 transition-colors" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100">
+                      <h4 className="font-black text-slate-700 mb-3 flex justify-between items-center tracking-tight">부서 요청 탭 <input type="text" value={deptTabName} onChange={e => setDeptTabName(e.target.value)} className="w-24 border-b-2 border-slate-300 focus:border-cyan-500 bg-transparent text-right outline-none text-slate-900 transition-colors font-bold" /></h4>
+                      <p className="text-xs text-slate-500 font-medium">부서명 / 직무 / 인원 / 요청월</p>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100">
+                      <h4 className="font-black text-slate-700 mb-3 flex justify-between items-center tracking-tight">공급 계획 탭 <input type="text" value={agencyTabName} onChange={e => setAgencyTabName(e.target.value)} className="w-24 border-b-2 border-slate-300 focus:border-cyan-500 bg-transparent text-right outline-none text-slate-900 transition-colors font-bold" /></h4>
+                      <p className="text-xs text-slate-500 font-medium">국가 / 트랙 / 업체 / 직무 / 인원 등</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <FileSpreadsheet className="text-slate-800" />
+                    <h2 className="text-xl font-black text-slate-800 tracking-tight">2. 실제 개인 명단 및 평가표 시트 (로우 DB)</h2>
+                  </div>
+                  <input type="text" value={individualSheetUrl} onChange={e => setIndividualSheetUrl(e.target.value)} placeholder="평가표가 포함된 시트 주소" className="w-full p-4 border-2 border-slate-200 rounded-2xl focus:border-cyan-500 outline-none font-mono text-sm text-slate-700 mb-6 bg-slate-50 transition-colors" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100">
+                      <h4 className="font-black text-slate-700 mb-3 flex justify-between items-center tracking-tight">사전기량 탭 <input type="text" value={individualTabName1} onChange={e => setIndividualTabName1(e.target.value)} className="w-28 border-b-2 border-slate-300 focus:border-cyan-500 bg-transparent text-right outline-none text-slate-900 transition-colors font-bold" /></h4>
+                      <p className="text-xs text-slate-500 font-medium">사전평가 기량, 한국어 점수 등</p>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100">
+                      <h4 className="font-black text-slate-700 mb-3 flex justify-between items-center tracking-tight">본기량 탭 <input type="text" value={individualTabName2} onChange={e => setIndividualTabName2(e.target.value)} className="w-28 border-b-2 border-slate-300 focus:border-cyan-500 bg-transparent text-right outline-none text-slate-900 transition-colors font-bold" /></h4>
+                      <p className="text-xs text-slate-500 font-medium">본평가 점수, 최종 입국 주차, 부서 등</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+        )}
+      </div>
+
+      {/* 모달 렌더링 영역 */}
+      <DeptModal isOpen={!!selectedDept} onClose={() => setSelectedDept(null)} dept={selectedDept} currentWeek={currentWeek} data={allocatedResults.filter(item => item.dept === selectedDept)} />
+      <ConfirmedDeptModal isOpen={!!selectedConfirmedDept} onClose={() => setSelectedConfirmedDept(null)} selection={selectedConfirmedDept} confirmedDeptSummary={confirmedDeptSummary} />
+      
+      <AgencyDetailModal 
+        isOpen={!!selectedAgencyModal} 
+        onClose={() => setSelectedAgencyModal(null)} 
+        agencyName={selectedAgencyModal} 
+        agencySupplyDB={agencySupplyDB} 
+        individuals={individualsWithDept}
+      />
+      
+      <IndividualDetailModal 
+        isOpen={!!selectedStageModal} 
+        onClose={() => setSelectedStageModal(null)} 
+        stage={selectedStageModal?.stage} 
+        showDropped={selectedStageModal?.showDropped} 
+        individuals={individualsWithDept} 
+        currentWeek={currentWeek} 
+      />
+      
+      {/* --- 커스텀 알림창(MessageBox) 렌더링 영역 --- */}
+      {alertMessage && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300 max-h-[80vh] flex flex-col border border-slate-200">
+            <div className="flex items-start space-x-4 overflow-y-auto hide-scrollbar">
+              <div className="bg-slate-100 p-2 rounded-xl shrink-0 border border-slate-200 mt-1">
+                <AlertCircle className="text-slate-800 w-6 h-6" />
+              </div>
+              <div className="flex-1 whitespace-pre-wrap text-slate-800 font-bold leading-relaxed pt-1.5 tracking-tight">{alertMessage}</div>
+            </div>
+            <div className="mt-8 flex justify-end shrink-0">
+              <button 
+                onClick={() => setAlertMessage(null)} 
+                className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black hover:bg-black transition-colors shadow-md border border-slate-700"
+              >
+                확인 완료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
