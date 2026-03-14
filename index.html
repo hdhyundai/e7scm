@@ -1315,6 +1315,25 @@
 
     // --- [Main Application Component] ---
     function App() {
+      // [비밀번호 해시 설정 및 LocalStorage 연동]
+      // 기본 비밀번호: 생산부서(user), 경영지원본부(admin), 시스템관리자(123456789)
+      const DEFAULT_HASH_PROD = '04f8996da763b7a969b1028ee3007569eaf3a635486ddab211d512c85b9df8fb';
+      const DEFAULT_HASH_MGMT = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
+      const DEFAULT_HASH_ADMIN = '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225';
+
+      const [hashProd, setHashProd] = useState(() => localStorage.getItem('hash_prod') || DEFAULT_HASH_PROD);
+      const [hashMgmt, setHashMgmt] = useState(() => localStorage.getItem('hash_mgmt') || DEFAULT_HASH_MGMT);
+      const [hashAdmin, setHashAdmin] = useState(() => localStorage.getItem('hash_admin') || DEFAULT_HASH_ADMIN);
+
+      // 비밀번호 변경 입력 상태
+      const [newProdPw, setNewProdPw] = useState('');
+      const [newMgmtPw, setNewMgmtPw] = useState('');
+      const [newAdminPw, setNewAdminPw] = useState('');
+
+      const [authRole, setAuthRole] = useState(null); // 권한 롤 상태: 'production', 'management', 'admin'
+      const [loginPassword, setLoginPassword] = useState('');
+      const [loginError, setLoginError] = useState(false);
+
       const [activeTab, setActiveTab] = useState('dashboard');
       const [currentWeek, setCurrentWeek] = useState(1); 
       const [filterStatus, setFilterStatus] = useState(null); 
@@ -1352,10 +1371,45 @@
       const [localPreData, setLocalPreData] = useState([]);
       const [localMainData, setLocalMainData] = useState([]);
 
-      const handleAdminLogin = (e) => {
+      // 비밀번호 해시 생성 함수 (SHA-256 단방향 암호화)
+      const hashPassword = async (password) => {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      };
+
+      // 시스템 초기 로그인 핸들러
+      const handleInitialLogin = async (e) => {
         e.preventDefault();
-        if (adminPassword === '123456789') {
+        const inputHash = await hashPassword(loginPassword);
+        
+        if (inputHash === hashProd) {
+          setAuthRole('production');
+          setLoginError(false);
+          setLoginPassword('');
+        } else if (inputHash === hashMgmt) {
+          setAuthRole('management');
+          setLoginError(false);
+          setLoginPassword('');
+        } else if (inputHash === hashAdmin) {
+          setAuthRole('admin');
+          setLoginError(false);
+          setLoginPassword('');
+        } else {
+          setLoginError(true);
+        }
+      };
+
+      // 대시보드 내 관리자 모달 로그인 (기존 권한을 관리자로 승격)
+      const handleAdminLogin = async (e) => {
+        e.preventDefault();
+        const inputHash = await hashPassword(adminPassword);
+
+        if (inputHash === hashAdmin) {
           setIsAdminAuthenticated(true);
+          setAuthRole('admin');
           setShowAdminModal(false);
           setActiveTab('data');
           setAdminPassword('');
@@ -1363,6 +1417,18 @@
         } else {
           setAdminError(true);
         }
+      };
+
+      // 비밀번호 변경 처리 핸들러
+      const handleChangePassword = async (roleName, newPw, setHashFunc, storageKey, setInputFunc) => {
+        if (!newPw || newPw.trim() === '') {
+          return showAlert('새 비밀번호를 입력해주세요.');
+        }
+        const newHash = await hashPassword(newPw);
+        localStorage.setItem(storageKey, newHash);
+        setHashFunc(newHash);
+        setInputFunc('');
+        showAlert(`✅ [${roleName}] 권한의 비밀번호가 성공적으로 변경되었습니다.\n\n* 주의: 서버가 없는 정적 호스팅이므로, 변경된 내용은 현재 접속 중인 PC(웹 브라우저)에만 저장됩니다.`);
       };
 
       const mergeAndSetIndDB = (preList, mainList) => {
@@ -1685,6 +1751,43 @@
 
       const toggleFilter = (status) => setFilterStatus(filterStatus === status ? null : status);
 
+      // 인증되지 않은 경우 (최초 접속) 로그인 스크린 렌더링
+      if (!authRole) {
+        return (
+          <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-pretendard">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+            
+            <div className="bg-white/10 backdrop-blur-2xl p-8 sm:p-10 rounded-[2rem] border border-white/20 shadow-2xl max-w-md w-full relative z-10 animate-in zoom-in-95 duration-500">
+              <div className="flex justify-center mb-6">
+                <div className="bg-cyan-500 p-4 rounded-2xl shadow-lg shadow-cyan-500/30">
+                  <Lock size={40} className="text-white" />
+                </div>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white text-center mb-2 tracking-tight">시스템 접근 인증</h2>
+              <p className="text-slate-300 text-center mb-8 font-medium text-sm sm:text-base">조직별로 부여받은 접근 코드를 입력해주세요.</p>
+              
+              <form onSubmit={handleInitialLogin}>
+                <div className="relative mb-6">
+                  <input 
+                    type="password" 
+                    value={loginPassword}
+                    onChange={e => {setLoginPassword(e.target.value); setLoginError(false);}}
+                    className={`w-full p-4 pl-12 bg-white/5 border-2 ${loginError ? 'border-rose-500/50' : 'border-white/10'} rounded-xl focus:border-cyan-400 focus:bg-white/10 outline-none text-white font-bold transition-all`}
+                    placeholder="비밀번호 입력"
+                    autoFocus
+                  />
+                  <Lock size={20} className={`absolute left-4 top-1/2 -translate-y-1/2 ${loginError ? 'text-rose-400' : 'text-slate-400'}`} />
+                  {loginError && <p className="absolute -bottom-6 left-1 text-xs text-rose-400 font-bold">비밀번호가 일치하지 않습니다.</p>}
+                </div>
+                <button type="submit" className="w-full py-4 bg-cyan-500 hover:bg-cyan-400 text-slate-900 rounded-xl font-black transition-colors shadow-lg shadow-cyan-500/20 text-lg mt-2">
+                  접속하기
+                </button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="min-h-screen font-pretendard pb-24 overflow-x-hidden text-slate-800 break-keep relative antialiased selection:bg-cyan-200 selection:text-cyan-900">
           
@@ -1753,7 +1856,10 @@
               
               <div className="relative z-10 flex dx-dark-glass p-1.5 rounded-2xl shrink-0 w-full lg:w-auto shadow-inner">
                 <button onClick={() => setActiveTab('dashboard')} className={`flex-1 lg:flex-none justify-center px-6 py-3.5 rounded-xl text-sm sm:text-base font-bold transition-all duration-300 ${activeTab === 'dashboard' ? 'bg-white/10 text-white shadow-md border border-white/10' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>📊 대시보드</button>
-                <button onClick={() => { if(isAdminAuthenticated) setActiveTab('data'); else setShowAdminModal(true); }} className={`flex-1 lg:flex-none justify-center px-6 py-3.5 flex items-center rounded-xl text-sm sm:text-base font-bold transition-all duration-300 ${activeTab === 'data' ? 'bg-cyan-600 text-white shadow-[0_0_15px_rgba(8,145,178,0.5)] border border-cyan-400/50' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Settings2 size={18} className="mr-2"/> ⚙️ 관리자 설정</button>
+                <button onClick={() => { if(authRole === 'admin') setActiveTab('data'); else setShowAdminModal(true); }} className={`flex-1 lg:flex-none justify-center px-6 py-3.5 flex items-center rounded-xl text-sm sm:text-base font-bold transition-all duration-300 ${activeTab === 'data' ? 'bg-cyan-600 text-white shadow-[0_0_15px_rgba(8,145,178,0.5)] border border-cyan-400/50' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Settings2 size={18} className="mr-2"/> ⚙️ 관리자 설정</button>
+                <button onClick={() => { setAuthRole(null); setActiveTab('dashboard'); setIsAdminAuthenticated(false); }} className="flex-1 lg:flex-none justify-center px-4 py-3.5 flex items-center rounded-xl text-sm sm:text-base font-bold text-slate-400 hover:text-white hover:bg-rose-500/50 transition-all duration-300 ml-1" title="로그아웃">
+                  <Lock size={18} />
+                </button>
               </div>
             </header>
 
@@ -1941,91 +2047,93 @@
                     </div>
                   </div>
 
-                  <div className="dx-glass rounded-[2rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                    <div className="p-6 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-white/50">
-                      <div className="flex items-center flex-wrap gap-3">
-                        <div className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 shrink-0"><Globe size={24} className="text-slate-700" /></div>
-                        <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight flex items-center flex-wrap gap-2">
-                          공급 출처 관제
-                          {filterStatus === 'completed' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">입국 완료 기준</span>}
-                          {filterStatus === 'planned' && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 shadow-sm ml-2">향후 예정 기준</span>}
-                        </h3>
+                  {authRole !== 'production' && (
+                    <div className="dx-glass rounded-[2rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                      <div className="p-6 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-white/50">
+                        <div className="flex items-center flex-wrap gap-3">
+                          <div className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 shrink-0"><Globe size={24} className="text-slate-700" /></div>
+                          <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight flex items-center flex-wrap gap-2">
+                            공급 출처 관제
+                            {filterStatus === 'completed' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">입국 완료 기준</span>}
+                            {filterStatus === 'planned' && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 shadow-sm ml-2">향후 예정 기준</span>}
+                          </h3>
+                        </div>
                       </div>
-                    </div>
-                    <div className="px-6 sm:px-8 py-4 border-b border-slate-100 bg-slate-50/80 overflow-x-auto hide-scrollbar">
-                      <div className="flex space-x-2 w-max">
-                        {availableJobs.map(job => (
-                          <button key={job} onClick={() => setSelectedJobFilter(job)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedJobFilter === job ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>
-                            {job}
-                          </button>
-                        ))}
+                      <div className="px-6 sm:px-8 py-4 border-b border-slate-100 bg-slate-50/80 overflow-x-auto hide-scrollbar">
+                        <div className="flex space-x-2 w-max">
+                          {availableJobs.map(job => (
+                            <button key={job} onClick={() => setSelectedJobFilter(job)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedJobFilter === job ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>
+                              {job}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                    <div className="p-6 sm:p-8 flex-1 overflow-y-auto max-h-[600px] hide-scrollbar">
-                      {sourceSummary.agency.length === 0 ? <p className="text-center text-slate-400 py-16 font-semibold">해당 조건의 데이터가 없습니다.</p> : (
-                        <>
-                          <div className="flex flex-col sm:flex-row mb-8 border-b border-slate-100 pb-8 gap-8">
-                            <div className="w-full sm:w-1/2 flex flex-col items-center">
-                              <span className="text-xs font-bold text-slate-500 mb-2 bg-slate-100 px-3 py-1 rounded-lg">국가 비중</span>
-                              <div className="w-full h-[180px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <PieChart>
-                                    <Pie data={sourceSummary.country} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" paddingAngle={5} stroke="none">
-                                      {sourceSummary.country.map((e, i) => <Cell key={i} fill={['#0284c7', '#0ea5e9'][i%2]} />)}
-                                    </Pie>
-                                    <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
-                                    <Legend verticalAlign="bottom" height={36}/>
-                                  </PieChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </div>
-                            <div className="w-full sm:w-1/2 flex flex-col items-center sm:border-l border-slate-100">
-                              <span className="text-xs font-bold text-slate-500 mb-2 bg-slate-100 px-3 py-1 rounded-lg">트랙 비중</span>
-                              <div className="w-full h-[180px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                  <PieChart>
-                                    <Pie data={sourceSummary.track} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" paddingAngle={5} stroke="none">
-                                      {sourceSummary.track.map((e, i) => <Cell key={i} fill={['#0f172a', '#334155'][i%2]} />)}
-                                    </Pie>
-                                    <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
-                                    <Legend verticalAlign="bottom" height={36}/>
-                                  </PieChart>
-                                </ResponsiveContainer>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="space-y-4">
-                            {sourceSummary.agency.map((agency, idx) => {
-                              const width = `${(agency.value / sourceSummary.agency[0].value) * 100}%`;
-                              return (
-                                <div key={idx} 
-                                     onClick={() => setSelectedAgencyModal(agency.name)}
-                                     className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
-                                  <div className="flex flex-wrap justify-between items-center text-sm font-bold text-slate-800 mb-3 gap-2">
-                                    <span className="flex items-center leading-normal whitespace-nowrap">
-                                      <MapPin size={16} className={`mr-2 shrink-0 ${agency.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'}`}/>
-                                      <span className="font-black text-base group-hover:text-slate-900 transition-colors">{agency.name}</span>
-                                      <span className="text-slate-400 ml-2 font-semibold text-xs">({agency.country})</span>
-                                    </span>
-                                    <span className="font-black text-slate-800 text-base shrink-0">{agency.value}명</span>
-                                  </div>
-                                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden shadow-inner">
-                                    <div className="bg-slate-800 h-full rounded-full transition-all duration-500" style={{ width }}></div>
-                                  </div>
+                      <div className="p-6 sm:p-8 flex-1 overflow-y-auto max-h-[600px] hide-scrollbar">
+                        {sourceSummary.agency.length === 0 ? <p className="text-center text-slate-400 py-16 font-semibold">해당 조건의 데이터가 없습니다.</p> : (
+                          <>
+                            <div className="flex flex-col sm:flex-row mb-8 border-b border-slate-100 pb-8 gap-8">
+                              <div className="w-full sm:w-1/2 flex flex-col items-center">
+                                <span className="text-xs font-bold text-slate-500 mb-2 bg-slate-100 px-3 py-1 rounded-lg">국가 비중</span>
+                                <div className="w-full h-[180px]">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie data={sourceSummary.country} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" paddingAngle={5} stroke="none">
+                                        {sourceSummary.country.map((e, i) => <Cell key={i} fill={['#0284c7', '#0ea5e9'][i%2]} />)}
+                                      </Pie>
+                                      <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                      <Legend verticalAlign="bottom" height={36}/>
+                                    </PieChart>
+                                  </ResponsiveContainer>
                                 </div>
-                              )
-                            })}
-                          </div>
-                        </>
-                      )}
+                              </div>
+                              <div className="w-full sm:w-1/2 flex flex-col items-center sm:border-l border-slate-100">
+                                <span className="text-xs font-bold text-slate-500 mb-2 bg-slate-100 px-3 py-1 rounded-lg">트랙 비중</span>
+                                <div className="w-full h-[180px]">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie data={sourceSummary.track} cx="50%" cy="50%" innerRadius={30} outerRadius={50} dataKey="value" paddingAngle={5} stroke="none">
+                                        {sourceSummary.track.map((e, i) => <Cell key={i} fill={['#0f172a', '#334155'][i%2]} />)}
+                                      </Pie>
+                                      <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                                      <Legend verticalAlign="bottom" height={36}/>
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="space-y-4">
+                              {sourceSummary.agency.map((agency, idx) => {
+                                const width = `${(agency.value / sourceSummary.agency[0].value) * 100}%`;
+                                return (
+                                  <div key={idx} 
+                                       onClick={() => setSelectedAgencyModal(agency.name)}
+                                       className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group">
+                                    <div className="flex flex-wrap justify-between items-center text-sm font-bold text-slate-800 mb-3 gap-2">
+                                      <span className="flex items-center leading-normal whitespace-nowrap">
+                                        <MapPin size={16} className={`mr-2 shrink-0 ${agency.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'}`}/>
+                                        <span className="font-black text-base group-hover:text-slate-900 transition-colors">{agency.name}</span>
+                                        <span className="text-slate-400 ml-2 font-semibold text-xs">({agency.country})</span>
+                                      </span>
+                                      <span className="font-black text-slate-800 text-base shrink-0">{agency.value}명</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden shadow-inner">
+                                      <div className="bg-slate-800 h-full rounded-full transition-all duration-500" style={{ width }}></div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
 
             {/* 데이터 연동 설정 (관리자 전용 영역) */}
-            {activeTab === 'data' && isAdminAuthenticated && (
+            {activeTab === 'data' && authRole === 'admin' && (
               <div className="animate-in fade-in duration-500 max-w-6xl mx-auto slide-in-from-bottom-4">
                 
                 <div className="dx-glass p-8 sm:p-12 rounded-[2rem] border border-cyan-200/50 shadow-xl mb-8 relative overflow-hidden">
@@ -2041,6 +2149,32 @@
                   <p className="text-slate-500 font-medium mb-10 relative z-10 text-base">
                     구글 멀티 시트 동기화 설정 및 로컬 데이터 강제 덮어쓰기 기능을 제공합니다.
                   </p>
+
+                  {/* 조직별 비밀번호 설정 영역 */}
+                  <div className="bg-slate-50/50 rounded-3xl p-6 sm:p-8 border border-slate-200 mb-10 relative z-10">
+                    <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center"><Lock size={20} className="mr-2 text-slate-500"/> 조직별 접속 비밀번호 변경 (로컬 암호화 저장)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 flex flex-col items-start shadow-sm transition-all hover:shadow-md">
+                        <h4 className="font-bold text-slate-800 mb-3">생산부서</h4>
+                        <input type="password" value={newProdPw} onChange={e => setNewProdPw(e.target.value)} placeholder="새 비밀번호 입력" className="w-full p-3 border-2 border-slate-100 rounded-xl focus:border-cyan-500 outline-none mb-3 text-sm transition-colors"/>
+                        <button onClick={() => handleChangePassword('생산부서', newProdPw, setHashProd, 'hash_prod', setNewProdPw)} className="w-full py-2.5 bg-slate-800 hover:bg-black text-white font-bold rounded-xl text-sm transition-colors">변경 저장</button>
+                      </div>
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 flex flex-col items-start shadow-sm transition-all hover:shadow-md">
+                        <h4 className="font-bold text-slate-800 mb-3">경영지원본부</h4>
+                        <input type="password" value={newMgmtPw} onChange={e => setNewMgmtPw(e.target.value)} placeholder="새 비밀번호 입력" className="w-full p-3 border-2 border-slate-100 rounded-xl focus:border-cyan-500 outline-none mb-3 text-sm transition-colors"/>
+                        <button onClick={() => handleChangePassword('경영지원본부', newMgmtPw, setHashMgmt, 'hash_mgmt', setNewMgmtPw)} className="w-full py-2.5 bg-slate-800 hover:bg-black text-white font-bold rounded-xl text-sm transition-colors">변경 저장</button>
+                      </div>
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200 flex flex-col items-start shadow-sm transition-all hover:shadow-md">
+                        <h4 className="font-bold text-slate-800 mb-3">시스템 관리자</h4>
+                        <input type="password" value={newAdminPw} onChange={e => setNewAdminPw(e.target.value)} placeholder="새 비밀번호 입력" className="w-full p-3 border-2 border-slate-100 rounded-xl focus:border-cyan-500 outline-none mb-3 text-sm transition-colors"/>
+                        <button onClick={() => handleChangePassword('시스템 관리자', newAdminPw, setHashAdmin, 'hash_admin', setNewAdminPw)} className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-sm transition-colors">변경 저장</button>
+                      </div>
+                    </div>
+                    <p className="mt-4 text-xs font-bold text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-100 flex items-center leading-relaxed break-keep">
+                      <AlertCircle size={16} className="mr-1.5 shrink-0" />
+                      참고: 서버(데이터베이스)가 없는 정적 웹페이지(GitHub Pages) 특성상, 여기서 변경한 비밀번호는 "현재 설정 작업을 진행 중인 PC의 브라우저 로컬 저장소"에만 적용됩니다. 모든 사용자에게 변경된 비밀번호를 일괄 적용하시려면 초기 코드의 해시값을 변경 후 재배포하셔야 합니다.
+                    </p>
+                  </div>
 
                   {/* 로컬 업로드 영역 */}
                   <div className="bg-slate-50/50 rounded-3xl p-6 sm:p-8 border border-slate-200 mb-10 relative z-10">
