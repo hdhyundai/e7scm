@@ -734,7 +734,7 @@
                   <step.icon size={28} className="sm:w-8 sm:h-8 relative z-10" />
                   <div className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-50 blur-md transition-opacity duration-500 bg-current`}></div>
                 </div>
-                <span className="text-sm sm:text-base font-bold text-slate-500 text-center mb-1 px-1 leading-normal break-keep flex items-center justify-center tracking-tight">{step.key}</span>
+                <span className="h-10 sm:h-12 text-sm sm:text-base font-bold text-slate-500 text-center mb-1 px-1 leading-normal break-keep flex items-center justify-center tracking-tight">{step.key}</span>
                 <span className={`text-2xl sm:text-3xl font-black transition-colors tracking-tighter ${counts[step.key] > 0 ? 'text-slate-800' : 'text-slate-300'}`}>{counts[step.key]}명</span>
                 
                 <div onClick={(e) => { e.stopPropagation(); if(dropouts[step.key] > 0) onStageClick(step.key, true); }} 
