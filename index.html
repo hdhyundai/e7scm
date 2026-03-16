@@ -157,9 +157,21 @@
       {m:12, w:1}, {m:12, w:2}, {m:12, w:3}, {m:12, w:4}                
     ];
 
-    const getWeekStr = (w) => WEEK_MAP[w - 1] ? `${WEEK_MAP[w - 1].m}월 ${WEEK_MAP[w - 1].w}주차` : '';
-    const getMonthStr = (w) => WEEK_MAP[w - 1] ? `${WEEK_MAP[w - 1].m}월` : '';
-    const isMonthStart = (w) => WEEK_MAP[w - 1] && WEEK_MAP[w - 1].w === 1;
+    const getWeekStr = (w) => {
+        if (w <= 0) return '2025년';
+        if (w > 52) return '2027년 이후';
+        return WEEK_MAP[w - 1] ? `${WEEK_MAP[w - 1].m}월 ${WEEK_MAP[w - 1].w}주차` : '';
+    };
+    
+    const getMonthStr = (w) => {
+        if (w <= 0 || w > 52) return '';
+        return WEEK_MAP[w - 1] ? `${WEEK_MAP[w - 1].m}월` : '';
+    };
+    
+    const isMonthStart = (w) => {
+        if (w <= 0 || w > 52) return false;
+        return WEEK_MAP[w - 1] && WEEK_MAP[w - 1].w === 1;
+    };
 
     const getIsoWeek = (date) => {
       const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -239,6 +251,7 @@
       return result;
     };
 
+    // [중요 수정] 연도 파싱 로직 변경 (2025년 데이터는 0 이하의 주차 값으로 변환되어 정상 필터링 됨)
     const parseWeekInfo = (val) => {
       if (!val) return null;
       const rawStr = String(val);
@@ -253,7 +266,16 @@
           if (year < 100) year += 2000;
           const month = parseInt(dateMatch[2]) - 1; 
           const day = parseInt(dateMatch[3]);
-          return getIsoWeek(new Date(year, month, day));
+          
+          let week = getIsoWeek(new Date(year, month, day));
+          
+          // 연도가 2026년이 아닌 경우 상대적인 주차로 변환 (2025년 이전은 음수화)
+          if (year < 2026) {
+              week = week - 52 - ((2026 - year - 1) * 52);
+          } else if (year > 2026) {
+              week = week + ((year - 2026) * 52);
+          }
+          return week;
       }
       
       const shortDateMatch = noSpaceVal.match(/^(\d{1,2})[-\.\/](\d{1,2})$/);
@@ -267,7 +289,7 @@
       const numMatch = noSpaceVal.match(/^(\d+)$/);
       if (numMatch) {
           const num = Number(numMatch[1]);
-          if (num > 0 && num <= 52) return num; 
+          if (num > 0) return num; 
       }
 
       return null;
@@ -402,6 +424,7 @@
       return { stage: '입국', isDropped: false };
     };
 
+    // [중요 수정] 부서 배정 시 2025년 입국자는 2026년 할당량에서 제외
     const assignDepartments = (individuals, requests) => {
       let needs = requests.map(r => ({
         ...r, 
@@ -414,6 +437,9 @@
       const availableDepts = [...new Set(needs.map(n => n.dept))].sort((a, b) => b.length - a.length);
 
       inds.forEach(ind => {
+        // 2026년 이후 데이터인지 판별 (과거 데이터는 할당 차감 안 함)
+        const is2026OrLater = ind.entryPassWeek === null || ind.entryPassWeek > 0;
+
         if (ind.assignedDept && ind.assignedDept.trim() !== '') {
           let assigned = ind.assignedDept.trim();
           
@@ -425,7 +451,7 @@
           }
 
           let req = needs.find(n => n.dept === assigned && n.job === ind.job);
-          if (req && req.remaining > 0) {
+          if (req && req.remaining > 0 && is2026OrLater) { 
             req.remaining--; 
             req.assignedCountries.add(ind.country);
             req.assignedAgencies.add(ind.agency);
@@ -437,7 +463,8 @@
         }
       });
 
-      const pendingInds = inds.filter(i => !i.isDeptFixed);
+      // 2025년 입국자는 자동 배정 그룹에서도 제외
+      const pendingInds = inds.filter(i => !i.isDeptFixed && (i.entryPassWeek === null || i.entryPassWeek > 0));
       const groups = {};
       
       pendingInds.forEach(ind => {
@@ -497,8 +524,17 @@
           bestReq.remaining -= assignCount;
           remainingToAssign -= assignCount;
         }
-        
-        g.members.forEach(member => member.displayDept = '대기(TBD)');
+      });
+
+      // 배정되지 않은 2025년 과거 데이터에는 별도 라벨 부여
+      inds.forEach(ind => {
+         if (!ind.displayDept) {
+            if (ind.entryPassWeek !== null && ind.entryPassWeek <= 0) {
+                ind.displayDept = '배치제외(25년입국)';
+            } else {
+                ind.displayDept = '대기(TBD)';
+            }
+         }
       });
 
       return inds;
@@ -548,7 +584,6 @@
              s.remaining -= take;
              targetDemand.remaining -= take;
           } else {
-             // 요청 DB에 해당 직무/부서가 명시되지 않은 상태에서 확정 배정된 경우 임시 수요 공간 생성
              let newDemand = {
                 id: demandPool.length + 1000,
                 dept: assigned,
@@ -734,7 +769,7 @@
                   <step.icon size={28} className="sm:w-8 sm:h-8 relative z-10" />
                   <div className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-50 blur-md transition-opacity duration-500 bg-current`}></div>
                 </div>
-                <span className="h-10 sm:h-12 text-sm sm:text-base font-bold text-slate-500 text-center mb-1 px-1 leading-normal break-keep flex items-center justify-center tracking-tight">{step.key}</span>
+                <span className="text-sm sm:text-base font-bold text-slate-500 text-center mb-1 px-1 leading-normal break-keep flex items-center justify-center tracking-tight">{step.key}</span>
                 <span className={`text-2xl sm:text-3xl font-black transition-colors tracking-tighter ${counts[step.key] > 0 ? 'text-slate-800' : 'text-slate-300'}`}>{counts[step.key]}명</span>
                 
                 <div onClick={(e) => { e.stopPropagation(); if(dropouts[step.key] > 0) onStageClick(step.key, true); }} 
@@ -855,8 +890,8 @@
                             
                             <td className="p-2 sm:p-3 text-slate-700 align-middle text-center border-r border-slate-100 whitespace-nowrap">
                               <div className="font-extrabold mb-1 text-xs">{ind.job}</div>
-                              <div className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded flex justify-center items-center ${ind.isDeptFixed ? 'bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
-                                {ind.displayDept} {ind.isDeptFixed ? '(확정)' : '(임의)'}
+                              <div className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded flex justify-center items-center ${ind.isDeptFixed ? 'bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm' : (ind.displayDept.includes('배치제외') ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-500 border border-slate-200')}`}>
+                                {ind.displayDept} {ind.isDeptFixed ? '(확정)' : ''}
                               </div>
                             </td>
                             
@@ -1311,8 +1346,6 @@
       );
     };
 
-    const MONTH_MAP_DISPLAY = { 1:'JAN', 2:'FEB', 3:'MAR', 4:'APR', 5:'MAY', 6:'JUN', 7:'JUL', 8:'AUG', 9:'SEP', 10:'OCT', 11:'NOV', 12:'DEC' };
-
     // --- [Main Application Component] ---
     function App() {
       // [비밀번호 해시 설정 및 LocalStorage 연동]
@@ -1694,7 +1727,8 @@
         const summary = {};
         const arrivedInds = individualsWithDept.filter(ind => {
           const status = getIndividualStatus(ind, currentWeek);
-          return status.stage === '입국' && !status.isDropped;
+          // [중요 수정] 2026년에 입국한 사람만 확정 테이블 TO에서 카운트
+          return status.stage === '입국' && !status.isDropped && ind.entryPassWeek > 0;
         });
 
         requestDB.forEach(req => {
