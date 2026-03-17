@@ -289,13 +289,12 @@
         return { stage: st.currentStage, isDropped: st.preDropped || st.mainDropped || st.entryDropped, ...st };
     };
 
-    // [개선] 부서 배정 우선순위 로직 강화
     const assignDepartments = (individuals, requests) => {
       let needs = requests.map(r => ({ ...r, remaining: r.reqCount, assignedCountries: new Set(), assignedAgencies: new Set(), assignedWeeks: new Set() }));
       let inds = individuals.map(ind => ({...ind}));
       const availableDepts = [...new Set(needs.map(n => n.dept))].sort((a, b) => b.length - a.length);
 
-      // Phase 1: 고정 할당 (Sheet2)
+      // Phase 1: 고정 할당
       inds.forEach(ind => {
         if (ind.assignedDept && ind.assignedDept.trim() !== '') {
           let assigned = ind.assignedDept.trim();
@@ -330,17 +329,14 @@
           let validReqs = needs.filter(n => n.job === g.job && n.remaining > 0);
           if (validReqs.length === 0) break;
           validReqs.sort((a, b) => {
-            // 1순위: 동일 국가 최우선
             const aHasC = a.assignedCountries.has(g.country); 
             const bHasC = b.assignedCountries.has(g.country);
             if (aHasC !== bHasC) return aHasC ? -1 : 1;
             
-            // 2순위: 분산 방지 (전체 수용 가능성)
             const aCanTakeAll = a.remaining >= remainingToAssign;
             const bCanTakeAll = b.remaining >= remainingToAssign;
             if (aCanTakeAll !== bCanTakeAll) return aCanTakeAll ? -1 : 1;
 
-            // 3순위: 날짜 근접성
             const diffA = Math.abs((g.week === 999 ? 52 : g.week) - a.reqMonth * 4.34);
             const diffB = Math.abs((g.week === 999 ? 52 : g.week) - b.reqMonth * 4.34);
             if (Math.abs(diffA - diffB) > 2) return diffA - diffB;
@@ -361,7 +357,6 @@
       return inds;
     };
 
-    // [개선] 예측 모드 부서 배정 우선순위 로직 강화 (동일국가 최우선)
     const autoAllocate = (requests, supplies) => {
       const demandPool = requests.map(r => ({ ...r, remaining: r.reqCount, fulfillments: [], assignedCountries: new Set(), assignedAgencies: new Set() }));
       const supplyPool = supplies.map(s => ({ ...s, remaining: s.count }));
@@ -369,7 +364,6 @@
 
       supplyPool.sort((a, b) => b.count - a.count);
 
-      // Phase 1: 고정 할당 (Sheet2)
       supplyPool.forEach(s => {
         if (s.fixedDept && s.fixedCount > 0) {
           let assigned = s.fixedDept.trim();
@@ -397,23 +391,19 @@
         }
       });
 
-      // Phase 2: 미확정 물량 할당
       supplyPool.forEach(s => {
         while (s.remaining > 0) {
           let validDemands = demandPool.filter(d => d.job === s.job && d.remaining > 0);
           if (validDemands.length === 0) break;
           validDemands.sort((a, b) => {
-            // 1순위: 동일 국가 최우선
             const aHasC = a.assignedCountries.has(s.country); 
             const bHasC = b.assignedCountries.has(s.country);
             if (aHasC !== bHasC) return aHasC ? -1 : 1;
 
-            // 2순위: 분산 방지 (전체 수용 가능성)
             const aCanTakeAll = a.remaining >= s.remaining;
             const bCanTakeAll = b.remaining >= s.remaining;
             if (aCanTakeAll !== bCanTakeAll) return aCanTakeAll ? -1 : 1;
 
-            // 3순위: 날짜 근접성
             const diffA = Math.abs((s.supplyWeek || 52) - a.reqMonth * 4.34);
             const diffB = Math.abs((s.supplyWeek || 52) - b.reqMonth * 4.34);
             if (Math.abs(diffA - diffB) > 2) return diffA - diffB;
@@ -797,10 +787,15 @@
       );
     };
 
-    const DeptModal = ({ isOpen, onClose, dept, data, currentWeek }) => {
+    const DeptModal = ({ isOpen, onClose, dept, data, currentWeek, filterStatus }) => {
       if (!isOpen) return null;
       const totalReq = data.reduce((sum, item) => sum + item.reqCount, 0);
       
+      let statusLabel = '매칭 합계';
+      if (filterStatus === 'completed') statusLabel = '입국 완료';
+      else if (filterStatus === 'planned') statusLabel = '입국 예정';
+      else if (filterStatus === 'current_wave') statusLabel = '당해 입국';
+
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col border border-slate-200">
@@ -825,7 +820,7 @@
                     <tr>
                       <th className="p-4 sm:p-5 font-black break-keep w-1/4 align-middle text-center">투입 직무 (요청월)</th>
                       <th className="p-4 sm:p-5 font-black break-keep w-1/6 align-middle text-center">요청 인원</th>
-                      <th className="p-4 sm:p-5 font-black pl-8 break-keep w-2/5 align-middle text-center">자동 매칭 결과 (입국주차)</th>
+                      <th className="p-4 sm:p-5 font-black pl-8 break-keep w-2/5 align-middle text-center">자동 매칭 결과 ({statusLabel})</th>
                       <th className="p-4 sm:p-5 font-black break-keep w-1/6 align-middle text-center leading-tight">
                         진행 상태<br/>
                         <span className="text-xs font-semibold text-slate-400 tracking-tight">({getWeekStr(currentWeek)} 기준)</span>
@@ -837,6 +832,15 @@
                       const arrivedCount = item.fulfillments.filter(f => f.supplyWeek !== null && f.supplyWeek <= currentWeek).reduce((sum, f) => sum + f.count, 0);
                       const isFullyArrived = arrivedCount >= item.reqCount && item.reqCount > 0;
 
+                      const filteredFulfillments = item.fulfillments.filter(f => {
+                        if (filterStatus === 'completed') return f.supplyWeek !== null && f.supplyWeek <= currentWeek;
+                        if (filterStatus === 'planned') return f.supplyWeek === null || f.supplyWeek > currentWeek;
+                        if (filterStatus === 'current_wave') return f.supplyWeek === currentWeek;
+                        return true;
+                      });
+
+                      if (filterStatus !== null && filteredFulfillments.length === 0) return null;
+
                       return (
                         <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                           <td className="p-4 sm:p-5 text-slate-800 font-extrabold break-keep align-middle">
@@ -847,11 +851,11 @@
                           </td>
                           <td className="p-4 sm:p-5 text-slate-800 font-black text-xl sm:text-2xl whitespace-nowrap align-middle text-center tracking-tighter">{item.reqCount}명</td>
                           <td className="p-4 sm:p-5 align-middle text-center">
-                            {item.fulfillments.length === 0 ? (
-                              <span className="text-slate-500 font-semibold bg-slate-100 px-3 py-1.5 rounded-lg break-keep shadow-sm border border-slate-200">공급 대기중</span>
+                            {filteredFulfillments.length === 0 ? (
+                              <span className="text-slate-500 font-semibold bg-slate-100 px-3 py-1.5 rounded-lg break-keep shadow-sm border border-slate-200">해당 인원 없음</span>
                             ) : (
                               <div className="space-y-2 flex flex-col items-center">
-                                {item.fulfillments.map((f, fIdx) => (
+                                {filteredFulfillments.map((f, fIdx) => (
                                   <div key={fIdx} className={`flex items-center justify-center flex-wrap gap-2 font-bold px-3 py-2 rounded-xl border shadow-sm ${f.supplyWeek !== null && f.supplyWeek <= currentWeek ? 'bg-cyan-50 border-cyan-200 text-cyan-900' : 'bg-white border-slate-200 text-slate-700'}`}>
                                     <span className={`font-black whitespace-nowrap ${f.supplyWeek !== null && f.supplyWeek <= currentWeek ? 'text-cyan-700' : 'text-slate-600'}`}>{f.supplyWeek ? getWeekStr(f.supplyWeek) : '입국주차 미정'}</span> 
                                     <span className="text-slate-300 mx-1">➔</span>
@@ -865,7 +869,7 @@
                                     </span>
                                   </div>
                                 ))}
-                                {item.unfulfilledCount > 0 && (
+                                {(filterStatus === null || filterStatus === 'planned') && item.unfulfilledCount > 0 && (
                                   <div className="text-xs sm:text-sm text-rose-500 font-bold mt-2 px-2 break-keep whitespace-nowrap flex items-center"><AlertCircle size={14} className="mr-1"/> {item.unfulfilledCount}명 매칭 대기중 (공급 부족)</div>
                                 )}
                               </div>
@@ -891,7 +895,7 @@
       );
     };
 
-    const ConfirmedDeptModal = ({ isOpen, onClose, selection, confirmedDeptSummary }) => {
+    const ConfirmedDeptModal = ({ isOpen, onClose, selection, confirmedDeptSummary, filterStatus }) => {
       if (!isOpen || !selection) return null;
       
       const deptData = confirmedDeptSummary.find(d => d.name === selection.dept);
@@ -903,6 +907,11 @@
       } else {
          Object.values(deptData.jobs).forEach(j => displayInds.push(...j.inds));
       }
+
+      let statusLabel = '총 인원';
+      if (filterStatus === 'completed') statusLabel = '입국 완료';
+      else if (filterStatus === 'planned') statusLabel = '입국 예정';
+      else if (filterStatus === 'current_wave') statusLabel = '당해 입국';
 
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200">
@@ -918,7 +927,7 @@
                   </h2>
                 </div>
                 <span className="hidden sm:inline-flex items-center bg-black/20 border border-white/10 backdrop-blur-md px-4 py-1.5 rounded-full text-sm sm:text-base font-bold shadow-inner whitespace-nowrap ml-4">
-                  입국 완료: {displayInds.length}명
+                  {statusLabel}: {displayInds.length}명
                 </span>
               </div>
               <button onClick={onClose} className="text-white/70 hover:text-white p-2 rounded-full hover:bg-black/20 transition-all shrink-0 bg-black/10 border border-white/10"><X size={24} /></button>
@@ -1507,29 +1516,35 @@
         allocatedResults.forEach(item => {
           let matchedCount = 0;
           let arrivedCount = 0;
-          let plannedArrivalCount = item.unfulfilledCount; 
+          let plannedArrivalCount = 0;
+          let currentWaveCount = 0; 
           
           item.fulfillments.forEach(f => {
             matchedCount += f.count;
             if (f.supplyWeek !== null && f.supplyWeek <= currentWeek) arrivedCount += f.count;
             else plannedArrivalCount += f.count;
+
+            if (f.supplyWeek === currentWeek) currentWaveCount += f.count;
           });
           
           if (filterStatus === 'completed' && arrivedCount === 0) return;
           if (filterStatus === 'planned' && plannedArrivalCount === 0) return;
+          if (filterStatus === 'current_wave' && currentWaveCount === 0) return;
           
-          if (!summary[item.dept]) summary[item.dept] = { name: item.dept, totalReq: 0, totalMatched: 0, totalArrived: 0, totalPlanned: 0, jobs: {} };
+          if (!summary[item.dept]) summary[item.dept] = { name: item.dept, totalReq: 0, totalMatched: 0, totalArrived: 0, totalPlanned: 0, totalCurrentWave: 0, jobs: {} };
           
           summary[item.dept].totalReq += item.reqCount;
           summary[item.dept].totalMatched += matchedCount;
           summary[item.dept].totalArrived += arrivedCount;
           summary[item.dept].totalPlanned += plannedArrivalCount;
+          summary[item.dept].totalCurrentWave += currentWaveCount;
           
-          if (!summary[item.dept].jobs[item.job]) summary[item.dept].jobs[item.job] = { req: 0, matched: 0, arr: 0, plan: 0 };
+          if (!summary[item.dept].jobs[item.job]) summary[item.dept].jobs[item.job] = { req: 0, matched: 0, arr: 0, plan: 0, wave: 0 };
           summary[item.dept].jobs[item.job].req += item.reqCount;
           summary[item.dept].jobs[item.job].matched += matchedCount;
           summary[item.dept].jobs[item.job].arr += arrivedCount;
           summary[item.dept].jobs[item.job].plan += plannedArrivalCount;
+          summary[item.dept].jobs[item.job].wave += currentWaveCount;
         });
         return Object.values(summary).sort((a, b) => b.totalReq - a.totalReq);
       }, [currentWeek, filterStatus, allocatedResults]);
@@ -1538,7 +1553,16 @@
         const summary = {};
         const arrivedInds = individualsWithDept.filter(ind => {
           const status = getIndividualStatus(ind, currentWeek);
-          return status.stage === '입국' && !status.isDropped && ind.entryPassWeek > 0;
+          const isConfirmed = status.stage === '입국' && !status.isDropped && ind.entryPassWeek > 0;
+
+          if (filterStatus === 'completed') {
+             return isConfirmed; 
+          } else if (filterStatus === 'planned') {
+             return ind.entryPassWeek > currentWeek && !status.isDropped && ind.entryPassWeek > 0;
+          } else if (filterStatus === 'current_wave') {
+             return ind.entryPassWeek === currentWeek && !status.isDropped && ind.entryPassWeek > 0;
+          }
+          return isConfirmed || (ind.entryPassWeek > currentWeek && !status.isDropped && ind.entryPassWeek > 0);
         });
 
         requestDB.forEach(req => {
@@ -1566,12 +1590,17 @@
           summary[dept].jobs[ind.job].inds.push(ind);
         });
 
-        return Object.values(summary).sort((a, b) => b.totalReq - a.totalReq);
-      }, [individualsWithDept, currentWeek, requestDB]);
+        let result = Object.values(summary);
+        if (filterStatus !== null) {
+            result = result.filter(d => d.totalArrived > 0);
+        }
+        return result.sort((a, b) => b.totalReq - a.totalReq);
+      }, [individualsWithDept, currentWeek, requestDB, filterStatus]);
 
       const filteredAgenciesByStatus = useMemo(() => agencySupplyDB.filter(item => {
         if (filterStatus === 'completed') return item.supplyWeek !== null && item.supplyWeek <= currentWeek;
         if (filterStatus === 'planned') return item.supplyWeek === null || item.supplyWeek > currentWeek; 
+        if (filterStatus === 'current_wave') return item.supplyWeek === currentWeek;
         return true;
       }), [currentWeek, filterStatus, agencySupplyDB]);
 
@@ -1759,12 +1788,15 @@
                     icon={CheckCircle2} 
                     colorClass="bg-gradient-to-br from-cyan-500 to-blue-600" 
                     onClick={() => toggleFilter('completed')} 
-                    isSelected={filterStatus === 'completed'} 
+                    isSelected={filterStatus === 'completed' || filterStatus === 'current_wave'} 
                     activeStatus={filterStatus !== null}
                     badge={currentWaveIndex !== -1 && currentWaveEntryCount > 0 ? (
-                      <span className="bg-cyan-50 text-cyan-700 text-[10px] sm:text-[11px] font-black px-2 py-1 rounded border border-cyan-200 shadow-sm animate-in fade-in zoom-in duration-300 whitespace-nowrap ml-2">
-                        🎉 {currentWaveIndex + 1}차 당해: +{currentWaveEntryCount}명
-                      </span>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleFilter('current_wave'); }}
+                        className={`text-[11px] sm:text-xs font-black px-3 py-1.5 rounded-lg border shadow-sm transition-all w-max flex items-center ${filterStatus === 'current_wave' ? 'bg-cyan-600 text-white border-cyan-700' : 'bg-cyan-50 text-cyan-700 border-cyan-200 hover:bg-cyan-100'}`}
+                      >
+                        🎉 {currentWaveIndex + 1}차 당해 입국: +{currentWaveEntryCount}명
+                      </button>
                     ) : null}
                   />
                   
@@ -1778,8 +1810,9 @@
                         <div className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 shrink-0"><Building2 size={24} className="text-slate-700" /></div>
                         <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight flex items-center flex-wrap gap-2">
                           부서 배치 대시보드
-                          {filterStatus === 'completed' && allocationMode === 'predicted' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">매칭/입국 완료 기준</span>}
+                          {filterStatus === 'completed' && allocationMode === 'predicted' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">매칭/입국 누적 기준</span>}
                           {filterStatus === 'planned' && allocationMode === 'predicted' && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 shadow-sm ml-2">향후 입국 예정 기준</span>}
+                          {filterStatus === 'current_wave' && allocationMode === 'predicted' && <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg border border-indigo-200 shadow-sm ml-2">{currentWaveIndex + 1}차 당해 입국 기준</span>}
                         </h3>
                       </div>
                       <div className="flex bg-slate-100/80 p-1.5 rounded-xl shrink-0 shadow-inner border border-slate-200/50">
@@ -1793,11 +1826,30 @@
                           <div className="col-span-full flex flex-col items-center justify-center text-slate-400 py-16"><Factory size={48} className="opacity-20 mb-4" /><p className="font-semibold">해당 조건의 부서 데이터가 없습니다.</p></div>
                         ) : (
                           deptSummary.map((dept, idx) => {
-                            const matchedPercent = Math.min(100, Math.round((dept.totalMatched / dept.totalReq) * 100)) || 0;
-                            const arrivedPercent = Math.min(100, Math.round((dept.totalArrived / dept.totalReq) * 100)) || 0;
+                            const displayTotal = filterStatus === 'completed' ? dept.totalArrived : 
+                                                 filterStatus === 'planned' ? dept.totalPlanned : 
+                                                 filterStatus === 'current_wave' ? dept.totalCurrentWave : 
+                                                 dept.totalMatched;
                             
-                            const displayTotal = filterStatus === 'completed' ? dept.totalArrived : filterStatus === 'planned' ? dept.totalPlanned : dept.totalMatched;
+                            const labels = { completed: "입국완료", planned: "입국예정", current_wave: "당해입국", null: "매칭합계" };
+                            const label = labels[String(filterStatus)];
                             
+                            let barContent;
+                            if (filterStatus === 'completed') {
+                               barContent = <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (displayTotal / dept.totalReq) * 100)}%` }} title={`입국완료: ${displayTotal}명`}></div>;
+                            } else if (filterStatus === 'planned') {
+                               barContent = <div className="bg-blue-400 h-full transition-all duration-500" style={{ width: `${Math.min(100, (displayTotal / dept.totalReq) * 100)}%` }} title={`입국예정: ${displayTotal}명`}></div>;
+                            } else if (filterStatus === 'current_wave') {
+                               barContent = <div className="bg-indigo-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (displayTotal / dept.totalReq) * 100)}%` }} title={`당해입국: ${displayTotal}명`}></div>;
+                            } else {
+                               barContent = (
+                                 <>
+                                   <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (dept.totalArrived / dept.totalReq) * 100)}%` }} title={`입국완료: ${dept.totalArrived}명`}></div>
+                                   <div className="bg-blue-300 h-full transition-all duration-500" style={{ width: `${Math.min(100, ((dept.totalMatched - dept.totalArrived) / dept.totalReq) * 100)}%` }} title={`입국예정: ${dept.totalMatched - dept.totalArrived}명`}></div>
+                                 </>
+                               );
+                            }
+
                             return (
                               <div key={idx} onClick={() => setSelectedDept(dept.name)} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-cyan-400 hover:shadow-[0_10px_20px_-10px_rgba(6,182,212,0.3)] cursor-pointer transition-all flex flex-col relative group">
                                 <div className="flex flex-wrap justify-between items-center mb-3 relative z-10 gap-x-2 gap-y-2">
@@ -1811,16 +1863,18 @@
                                   </div>
                                 </div>
                                 <div className="w-full bg-slate-100 rounded-full h-2.5 mb-2 flex overflow-hidden relative z-10 shadow-inner">
-                                  <div className="bg-cyan-500 h-full transition-all duration-500" style={{ width: `${arrivedPercent}%` }} title={`입국완료: ${dept.totalArrived}명`}></div>
-                                  <div className="bg-blue-300 h-full transition-all duration-500" style={{ width: `${matchedPercent - arrivedPercent}%` }} title={`입국예정: ${dept.totalMatched - dept.totalArrived}명`}></div>
+                                  {barContent}
                                 </div>
                                 <div className="flex justify-between text-[10px] sm:text-xs font-bold text-slate-400 mb-4 px-1">
-                                  <span>입국완료 <span className="text-cyan-600 ml-0.5">{dept.totalArrived}</span></span>
-                                  <span>예정 <span className="text-blue-500 ml-0.5">{dept.totalPlanned}</span></span>
+                                  <span>{label} <span className={`ml-0.5 ${filterStatus === 'current_wave' ? 'text-indigo-600' : 'text-slate-800'}`}>{displayTotal}</span></span>
+                                  <span>요청대비 {Math.min(100, Math.round((displayTotal / dept.totalReq) * 100)) || 0}%</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2 relative z-10">
                                   {Object.entries(dept.jobs).map(([job, stats]) => {
-                                    const jobDisplay = filterStatus === 'completed' ? stats.arr : filterStatus === 'planned' ? stats.plan : stats.matched;
+                                    const jobDisplay = filterStatus === 'completed' ? stats.arr : 
+                                                       filterStatus === 'planned' ? stats.plan : 
+                                                       filterStatus === 'current_wave' ? stats.wave : 
+                                                       stats.matched;
                                     return (
                                       <span key={job} className="text-[11px] font-bold bg-slate-50 text-slate-600 px-2.5 py-1 rounded-md border border-slate-100">
                                         {job} <span className="ml-1.5 text-slate-800 font-black">{jobDisplay}/{stats.req}</span>
@@ -1881,8 +1935,9 @@
                           <div className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 shrink-0"><Globe size={24} className="text-slate-700" /></div>
                           <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight flex items-center flex-wrap gap-2">
                             공급 출처 관제
-                            {filterStatus === 'completed' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">입국 완료 기준</span>}
+                            {filterStatus === 'completed' && <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded-lg border border-cyan-200 shadow-sm ml-2">입국 누적 기준</span>}
                             {filterStatus === 'planned' && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200 shadow-sm ml-2">향후 예정 기준</span>}
+                            {filterStatus === 'current_wave' && <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg border border-indigo-200 shadow-sm ml-2">{currentWaveIndex + 1}차 당해 입국 기준</span>}
                           </h3>
                         </div>
                       </div>
@@ -2100,8 +2155,8 @@
           </div>
 
           {/* 모달 렌더링 영역 */}
-          <DeptModal isOpen={!!selectedDept} onClose={() => setSelectedDept(null)} dept={selectedDept} currentWeek={currentWeek} data={allocatedResults.filter(item => item.dept === selectedDept)} />
-          <ConfirmedDeptModal isOpen={!!selectedConfirmedDept} onClose={() => setSelectedConfirmedDept(null)} selection={selectedConfirmedDept} confirmedDeptSummary={confirmedDeptSummary} />
+          <DeptModal isOpen={!!selectedDept} onClose={() => setSelectedDept(null)} dept={selectedDept} currentWeek={currentWeek} data={allocatedResults.filter(item => item.dept === selectedDept)} filterStatus={filterStatus} />
+          <ConfirmedDeptModal isOpen={!!selectedConfirmedDept} onClose={() => setSelectedConfirmedDept(null)} selection={selectedConfirmedDept} confirmedDeptSummary={confirmedDeptSummary} filterStatus={filterStatus} />
           
           <AgencyDetailModal 
             isOpen={!!selectedAgencyModal} 
