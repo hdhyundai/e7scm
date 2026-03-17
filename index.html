@@ -589,7 +589,7 @@
       );
     };
 
-    const IndividualDetailModal = ({ isOpen, onClose, stage, viewType, individuals, currentWeek }) => {
+    const IndividualDetailModal = ({ isOpen, onClose, stage, viewType, individuals, currentWeek, authRole }) => {
       const [sortConfig, setSortConfig] = window.React.useState({ key: 'uid', direction: 'asc' });
 
       window.React.useEffect(() => {
@@ -659,33 +659,45 @@
         const headers = [
           "응시번호", "직무", "성명", "생년월일", "E-9여부", "나이",
           "한국어점수", "취부점수", "용접점수",
-          "국가", "송출업체", 
+          "국가"
+        ];
+        if (authRole !== 'production') {
+            headers.push("송출업체");
+        }
+        headers.push(
           "본평가일자(주차)", "본기량합격(주차)", "본기량탈락(주차)",
           "입국일자(주차)", "입국탈락(주차)",
           "배치부서", "영상URL", "인성검사URL"
-        ];
+        );
 
-        const rows = sortedIndividuals.map(ind => [
-          ind.uid || '',
-          ind.job || '',
-          ind.name || '',
-          ind.dob || '',
-          ind.isE9 ? 'O' : 'X',
-          ind.age || '',
-          ind.mainKrScore || '',
-          ind.mainChibuScore || '',
-          ind.mainWeldScore || '',
-          ind.country || '',
-          ind.agency || '',
-          ind.mainTestWeek ? `${ind.mainTestWeek}주차` : '',
-          ind.mainPassWeek ? `${ind.mainPassWeek}주차` : '',
-          ind.mainDropWeek ? `${ind.mainDropWeek}주차` : '',
-          ind.entryPassWeek ? `${ind.entryPassWeek}주차` : '',
-          ind.entryDropWeek ? `${ind.entryDropWeek}주차` : '',
-          ind.isDeptFixed ? ind.displayDept : '대기',
-          ind.videoUrl || '',
-          ind.personalityTestUrl || ''
-        ]);
+        const rows = sortedIndividuals.map(ind => {
+            const row = [
+              ind.uid || '',
+              ind.job || '',
+              ind.name || '',
+              ind.dob || '',
+              ind.isE9 ? 'O' : 'X',
+              ind.age || '',
+              ind.mainKrScore || '',
+              ind.mainChibuScore || '',
+              ind.mainWeldScore || '',
+              ind.country || ''
+            ];
+            if (authRole !== 'production') {
+                row.push(ind.agency || '');
+            }
+            row.push(
+              ind.mainTestWeek ? `${ind.mainTestWeek}주차` : '',
+              ind.mainPassWeek ? `${ind.mainPassWeek}주차` : '',
+              ind.mainDropWeek ? `${ind.mainDropWeek}주차` : '',
+              ind.entryPassWeek ? `${ind.entryPassWeek}주차` : '',
+              ind.entryDropWeek ? `${ind.entryDropWeek}주차` : '',
+              ind.isDeptFixed ? ind.displayDept : '대기',
+              ind.videoUrl || '',
+              ind.personalityTestUrl || ''
+            );
+            return row;
+        });
 
         const csvContent = [
           headers.join(","),
@@ -766,7 +778,7 @@
                           <div className="flex items-center justify-center">응시번호 (성명) <SortIcon columnKey="uid" /></div>
                         </th>
                         <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors" onClick={() => requestSort('country')}>
-                          <div className="flex items-center justify-center">국가 / 업체명 <SortIcon columnKey="country" /></div>
+                          <div className="flex items-center justify-center">{authRole === 'production' ? '국가' : '국가 / 업체명'} <SortIcon columnKey="country" /></div>
                         </th>
                         <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors" onClick={() => requestSort('job')}>
                           <div className="flex items-center justify-center">직무 / <span className="text-cyan-600 ml-1">배치부서</span> <SortIcon columnKey="job" /></div>
@@ -783,6 +795,22 @@
                           </div>
                         </th>
                         
+                        {showExtraColumns && (
+                          <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200">
+                            첨부 (영상/인성)
+                            <div className="mt-1.5 flex justify-center">
+                              <a 
+                                href="https://drive.google.com/file/d/1JvxYQqmevHsnp7CWW200Oup50j64sZWR/view?usp=sharing" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 border border-indigo-200 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                              >
+                                <BookOpen size={10} className="mr-1" /> 인성검사설명서
+                              </a>
+                            </div>
+                          </th>
+                        )}
                         <th className="p-2 sm:p-3 font-black align-middle text-center">진행 상태</th>
                       </tr>
                     </thead>
@@ -805,7 +833,9 @@
                                 <MapPin size={12} className={ind.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'} />
                                 <span className="font-bold text-slate-700 text-xs">{ind.country}</span>
                               </div>
-                              <div className="text-[10px] text-slate-500 font-semibold">{ind.agency} <span className="font-normal text-slate-400">({ind.track})</span></div>
+                              {authRole !== 'production' && (
+                                <div className="text-[10px] text-slate-500 font-semibold">{ind.agency} <span className="font-normal text-slate-400">({ind.track})</span></div>
+                              )}
                             </td>
                             
                             <td className="p-2 sm:p-3 text-slate-700 align-middle text-center border-r border-slate-100 whitespace-nowrap">
@@ -833,6 +863,39 @@
                                   </div>
                                 </div>
                             </td>
+
+                            {showExtraColumns && (
+                              <td className="p-2 sm:p-3 align-middle text-center border-r border-slate-100">
+                                 <div className="flex flex-row gap-1.5 items-center justify-center">
+                                    {ind.videoUrl ? (
+                                      <a 
+                                        href={ind.videoUrl.startsWith('http') ? ind.videoUrl : `https://${ind.videoUrl}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center justify-center px-2 py-1 bg-slate-800 text-white border border-slate-700 rounded text-[10px] sm:text-[11px] font-bold hover:bg-black transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                                      >
+                                        <PlayCircle size={12} className="mr-1 text-cyan-400" /> 영상
+                                      </a>
+                                    ) : (
+                                      <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
+                                    )}
+                                    {ind.personalityTestUrl ? (
+                                      <a 
+                                        href={ind.personalityTestUrl.startsWith('http') ? ind.personalityTestUrl : `https://${ind.personalityTestUrl}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center justify-center px-2 py-1 bg-white text-slate-700 border border-slate-300 rounded text-[10px] sm:text-[11px] font-bold hover:border-cyan-400 hover:text-cyan-700 transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                                      >
+                                        <FileText size={12} className="mr-1 text-cyan-600" /> 인성
+                                      </a>
+                                    ) : (
+                                      <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
+                                    )}
+                                 </div>
+                              </td>
+                            )}
 
                             <td className="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
                               {status.isDropped ? (
@@ -862,7 +925,7 @@
       ) : null;
     };
 
-    const DeptModal = ({ isOpen, onClose, dept, data, currentWeek, filterStatus }) => {
+    const DeptModal = ({ isOpen, onClose, dept, data, currentWeek, filterStatus, authRole }) => {
       if (!isOpen || !dept) return null;
       const totalReq = data.reduce((sum, item) => sum + item.reqCount, 0);
       
@@ -937,10 +1000,10 @@
                                     <span className="text-base whitespace-nowrap font-black">{f.count}명</span>
                                     {f.isFixed && <span className="text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded border border-slate-700 font-bold whitespace-nowrap shadow-sm">배치확정</span>}
                                     <span className="flex items-center text-xs bg-white/80 py-1 px-2 rounded-lg text-slate-600 border border-slate-200/60 break-keep ml-2 shadow-sm font-semibold">
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded flex items-center mr-1.5 font-black whitespace-nowrap ${f.country === '베트남' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded flex items-center ${authRole === 'production' ? '' : 'mr-1.5'} font-black whitespace-nowrap ${f.country === '베트남' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                         {f.country}
                                       </span>
-                                      {f.agency}
+                                      {authRole !== 'production' && f.agency}
                                     </span>
                                   </div>
                                 ))}
@@ -970,7 +1033,7 @@
       ) : null;
     };
 
-    const ConfirmedDeptModal = ({ isOpen, onClose, selection, confirmedDeptSummary, filterStatus }) => {
+    const ConfirmedDeptModal = ({ isOpen, onClose, selection, confirmedDeptSummary, filterStatus, authRole }) => {
       const deptData = (confirmedDeptSummary && selection) ? confirmedDeptSummary.find(d => d.name === selection.dept) : null;
 
       let displayInds = [];
@@ -1021,7 +1084,7 @@
                         <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200">
                           <div className="flex items-center justify-center">응시번호 (성명)</div>
                         </th>
-                        <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200 text-center">국가 / 업체</th>
+                        <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200 text-center">{authRole === 'production' ? '국가' : '국가 / 업체'}</th>
                         <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200 text-center">투입 직무</th>
                         <th className="p-2 sm:p-3 font-black align-middle border-r border-slate-200 bg-blue-50/50 text-blue-900 text-center">
                           본기량 상세 점수<br/>
@@ -1047,7 +1110,9 @@
                               <MapPin size={12} className={ind.country === '베트남' ? 'text-rose-500' : 'text-cyan-500'} />
                               <span className="font-bold text-slate-700 text-xs">{ind.country}</span>
                             </div>
-                            <div className="text-[10px] text-slate-500 font-semibold">{ind.agency} <span className="font-normal text-slate-400">({ind.track})</span></div>
+                            {authRole !== 'production' && (
+                              <div className="text-[10px] text-slate-500 font-semibold">{ind.agency} <span className="font-normal text-slate-400">({ind.track})</span></div>
+                            )}
                           </td>
                           <td className="p-2 sm:p-3 text-slate-700 font-extrabold border-r border-slate-100 text-xs text-center">{ind.job}</td>
                           
@@ -2283,8 +2348,8 @@
           </div>
 
           {/* 모달 렌더링 영역 */}
-          <DeptModal isOpen={!!selectedDept} onClose={() => setSelectedDept(null)} dept={selectedDept} currentWeek={currentWeek} data={allocatedResults.filter(item => item.dept === selectedDept)} filterStatus={filterStatus} />
-          <ConfirmedDeptModal isOpen={!!selectedConfirmedDept} onClose={() => setSelectedConfirmedDept(null)} selection={selectedConfirmedDept} confirmedDeptSummary={confirmedDeptSummary} filterStatus={filterStatus} />
+          <DeptModal isOpen={!!selectedDept} onClose={() => setSelectedDept(null)} dept={selectedDept} currentWeek={currentWeek} data={allocatedResults.filter(item => item.dept === selectedDept)} filterStatus={filterStatus} authRole={authRole} />
+          <ConfirmedDeptModal isOpen={!!selectedConfirmedDept} onClose={() => setSelectedConfirmedDept(null)} selection={selectedConfirmedDept} confirmedDeptSummary={confirmedDeptSummary} filterStatus={filterStatus} authRole={authRole} />
           
           <AgencyDetailModal 
             isOpen={!!selectedAgencyModal} 
@@ -2301,6 +2366,7 @@
             viewType={selectedStageModal?.viewType} 
             individuals={individualsWithDept} 
             currentWeek={currentWeek} 
+            authRole={authRole}
           />
           
           {/* --- 커스텀 알림창(MessageBox) 렌더링 영역 --- */}
