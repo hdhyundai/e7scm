@@ -24,6 +24,9 @@
   <!-- Vanilla Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
+  <!-- CryptoJS (For fallback hashing on file:// protocol) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
   <style>
     @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
     
@@ -120,7 +123,7 @@
     const Upload = createLucideIcon('Upload');
     const RefreshCw = createLucideIcon('RefreshCw');
     const Settings2 = createLucideIcon('Settings2');
-    const Download = createLucideIcon('Download'); // 엑셀 다운로드 아이콘 추가
+    const Download = createLucideIcon('Download'); 
 
     // ==========================================
     // 1. DATA CONSTANTS
@@ -780,22 +783,6 @@
                           </div>
                         </th>
                         
-                        {showExtraColumns && (
-                          <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200">
-                            첨부 (영상/인성)
-                            <div className="mt-1.5 flex justify-center">
-                              <a 
-                                href="https://drive.google.com/file/d/1JvxYQqmevHsnp7CWW200Oup50j64sZWR/view?usp=sharing" 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 border border-indigo-200 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
-                              >
-                                <BookOpen size={10} className="mr-1" /> 인성검사설명서
-                              </a>
-                            </div>
-                          </th>
-                        )}
                         <th className="p-2 sm:p-3 font-black align-middle text-center">진행 상태</th>
                       </tr>
                     </thead>
@@ -846,39 +833,6 @@
                                   </div>
                                 </div>
                             </td>
-
-                            {showExtraColumns && (
-                              <td className="p-2 sm:p-3 align-middle text-center border-r border-slate-100">
-                                 <div className="flex flex-row gap-1.5 items-center justify-center">
-                                    {ind.videoUrl ? (
-                                      <a 
-                                        href={ind.videoUrl.startsWith('http') ? ind.videoUrl : `https://${ind.videoUrl}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="inline-flex items-center justify-center px-2 py-1 bg-slate-800 text-white border border-slate-700 rounded text-[10px] sm:text-[11px] font-bold hover:bg-black transition-all shadow-sm active:scale-95 whitespace-nowrap"
-                                      >
-                                        <PlayCircle size={12} className="mr-1 text-cyan-400" /> 영상
-                                      </a>
-                                    ) : (
-                                      <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
-                                    )}
-                                    {ind.personalityTestUrl ? (
-                                      <a 
-                                        href={ind.personalityTestUrl.startsWith('http') ? ind.personalityTestUrl : `https://${ind.personalityTestUrl}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="inline-flex items-center justify-center px-2 py-1 bg-white text-slate-700 border border-slate-300 rounded text-[10px] sm:text-[11px] font-bold hover:border-cyan-400 hover:text-cyan-700 transition-all shadow-sm active:scale-95 whitespace-nowrap"
-                                      >
-                                        <FileText size={12} className="mr-1 text-cyan-600" /> 인성
-                                      </a>
-                                    ) : (
-                                      <span className="inline-flex items-center justify-center px-2 py-1 bg-slate-50 text-slate-300 border border-slate-100 rounded text-[10px] sm:text-[11px] font-bold whitespace-nowrap">-</span>
-                                    )}
-                                 </div>
-                              </td>
-                            )}
 
                             <td className="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
                               {status.isDropped ? (
