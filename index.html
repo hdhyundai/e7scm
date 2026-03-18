@@ -24,7 +24,7 @@
   <!-- Vanilla Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- CryptoJS (For fallback hashing on file:// protocol) -->
+  <!-- CryptoJS (For fallback hashing on file:// and GitHub protocol) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
   <style>
@@ -465,7 +465,7 @@
 
       const stats = { "사전기량검증완료": { waiting:0, passed:0, dropped:0 }, "1차 육성(기량,한국어)": { current:0 }, "본기량검증완료": { waiting:0, passed:0, dropped:0 }, "2차 육성(기량,한국어)": { current:0 }, "입국": { passed:0, dropped:0 } };
       
-      // 고유 명단 개수 그대로 반영
+      // 고유 명단 개수 그대로 반영 (독립적 산출)
       let totalPreTested = individuals.filter(ind => ind.hasPreData).length;
       let totalMainTested = individuals.filter(ind => ind.hasMainData).length;
 
@@ -830,7 +830,7 @@
                             <td className="p-2 sm:p-3 text-slate-400 align-middle text-center font-bold border-r border-slate-100">{idx + 1}</td>
                             <td className="p-2 sm:p-3 text-slate-800 align-middle border-r border-slate-100">
                               <div className="flex items-center justify-start gap-2 pl-2 sm:pl-6">
-                                <span className="font-mono text-[10px] sm:text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shadow-sm shrink-0">{ind.uid}</span>
+                                <span className="font-mono text-[10px] sm:text-[11px] font-black text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shadow-sm shrink-0">{ind.uid}</span>
                                 <span className="font-bold text-xs sm:text-sm whitespace-nowrap tracking-tight text-slate-800">{ind.name || '이름없음'}</span>
                                 {ind.isE9 && <span className="bg-amber-100 text-amber-700 text-[9px] px-1.5 py-0.5 rounded font-black border border-amber-200 shadow-sm flex items-center shrink-0"><ShieldCheck size={10} className="mr-0.5"/>E-9</span>}
                               </div>
@@ -1364,19 +1364,18 @@
       const [localPreData, setLocalPreData] = useState([]);
       const [localMainData, setLocalMainData] = useState([]);
 
-      // 비밀번호 해시 생성 함수 (SHA-256 단방향 암호화)
-      const hashPassword = async (password) => {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      // 비밀번호 해시 생성 함수
+      const hashPassword = (password) => {
+        if (window.CryptoJS) {
+          return window.CryptoJS.SHA256(password.trim()).toString();
+        }
+        return password.trim();
       };
 
       // 시스템 초기 로그인 핸들러
-      const handleInitialLogin = async (e) => {
+      const handleInitialLogin = (e) => {
         e.preventDefault();
-        const inputHash = await hashPassword(loginPassword);
+        const inputHash = hashPassword(loginPassword);
         
         if (inputHash === hashProd) {
           setAuthRole('production');
@@ -1396,9 +1395,9 @@
       };
 
       // 대시보드 내 관리자 모달 로그인 (기존 권한을 관리자로 승격)
-      const handleAdminLogin = async (e) => {
+      const handleAdminLogin = (e) => {
         e.preventDefault();
-        const inputHash = await hashPassword(adminPassword);
+        const inputHash = hashPassword(adminPassword);
 
         if (inputHash === hashAdmin) {
           setIsAdminAuthenticated(true);
@@ -1413,11 +1412,11 @@
       };
 
       // 비밀번호 변경 처리 핸들러
-      const handleChangePassword = async (roleName, newPw, setHashFunc, storageKey, setInputFunc) => {
+      const handleChangePassword = (roleName, newPw, setHashFunc, storageKey, setInputFunc) => {
         if (!newPw || newPw.trim() === '') {
           return showAlert('새 비밀번호를 입력해주세요.');
         }
-        const newHash = await hashPassword(newPw);
+        const newHash = hashPassword(newPw);
         localStorage.setItem(storageKey, newHash);
         setHashFunc(newHash);
         setInputFunc('');
@@ -1599,20 +1598,32 @@
           if (indRes1.ok) {
               const text1 = await indRes1.text();
               checkCsvError(text1, individualTabName1);
-              mergedPre = parseCSVText(text1).map((cols, i) => parsePreRow(cols, i)).filter(Boolean);
-              if(mergedPre.length > 0) ind1Success = true;
+              
+              // 탭 이름 오기입으로 인해 본기량 시트가 사전기량으로 잘못 불러와지는 현상 방지
+              if (text1.includes('배치부서') || text1.includes('입국일자')) {
+                  errorDetails.push(`❌ [사전기량 탭 오류] 탭 이름이 정확하지 않아 본기량 시트가 중복으로 불러와졌습니다. 관리자 설정에서 탭 이름의 띄어쓰기를 정확히 맞춰주세요.`);
+              } else {
+                  mergedPre = parseCSVText(text1).map((cols, i) => parsePreRow(cols, i)).filter(Boolean);
+                  if(mergedPre.length > 0) ind1Success = true;
+              }
           }
           if (indRes2.ok) {
               const text2 = await indRes2.text();
               checkCsvError(text2, individualTabName2);
-              mergedMain = parseCSVText(text2).map((cols, i) => parseMainRow(cols, i)).filter(Boolean);
-              if(mergedMain.length > 0) ind2Success = true;
+              
+              // 사전기량이 본기량으로 잘못 불러와지는 현상 방지
+              if (!text2.includes('배치부서') && !text2.includes('입국일자')) {
+                  errorDetails.push(`❌ [본기량 탭 오류] 탭 이름이 정확하지 않아 사전기량 시트가 잘못 불러와졌습니다. 관리자 설정에서 탭 이름의 띄어쓰기를 정확히 맞춰주세요.`);
+              } else {
+                  mergedMain = parseCSVText(text2).map((cols, i) => parseMainRow(cols, i)).filter(Boolean);
+                  if(mergedMain.length > 0) ind2Success = true;
+              }
           }
 
           if (ind1Success || ind2Success) {
               mergeAndSetIndDB(mergedPre, mergedMain);
               successCount += (ind1Success ? 1 : 0) + (ind2Success ? 1 : 0);
-              errorDetails.push(`✅ [명단 연동] 사전평가 ${mergedPre.length}명, 본평가 ${mergedMain.length}명 병합 성공`);
+              errorDetails.push(`✅ [명단 연동] 사전평가 ${mergedPre.length}명, 본평가 ${mergedMain.length}명 병합 완료`);
           } else {
               errorDetails.push(`❌ [명단 연동] 개인 명단 데이터를 양쪽 탭에서 모두 찾을 수 없습니다.`);
           }
@@ -1626,7 +1637,7 @@
             localStorage.setItem('individualTabName1', individualTabName1);
             localStorage.setItem('individualTabName2', individualTabName2);
           } else {
-            showAlert(`⚠️ 동기화 부분 실패\n\n${errorDetails.join('\n')}\n\n※ 접근 권한을 확인해주세요.`);
+            showAlert(`⚠️ 동기화 부분 실패 또는 오류 발생\n\n${errorDetails.join('\n')}\n\n※ 접근 권한 또는 탭 이름을 확인해주세요.`);
           }
         } catch (err) {
           if (err.message === 'AUTH_REQUIRED') {
