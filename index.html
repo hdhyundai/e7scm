@@ -277,7 +277,8 @@
         }
 
         // [중요 수정] 강제 승급 로직 1: 본평가 명단에 진입했다면, 사전평가 탈락 이력은 무효화하고 합격/통과한 것으로 간주
-        if (hasMain) {
+        // (단, 사전평가 명단에 이름이 올라간 대상자일 경우에만 사전평가 통계에 집계되도록)
+        if (hasPre && hasMain) {
             st.preTested = true;
             st.prePassed = true;
             st.preDropped = false;
@@ -293,11 +294,13 @@
         }
 
         // [중요 수정] 강제 승급 로직 2: 입국 명단(입국일자/입국탈락)에 진입했다면, 본평가 탈락 이력 무효화
-        if (hasEntry) { 
+        if (hasMain && hasEntry) { 
             st.mainTested = true; 
             st.mainPassed = true; 
             st.mainDropped = false; 
             st.mainWaiting = false; 
+        }
+        if (hasPre && hasEntry) { 
             st.preTested = true; 
             st.prePassed = true; 
             st.preDropped = false; 
@@ -495,15 +498,15 @@
       individuals.forEach(ind => {
           const st = getIndividualStatus(ind, currentWeek);
 
-          // 사전기량검증 대상
-          if (st.preTested) {
+          // 사전기량검증 대상 (사전기량 명단에 있는 사람만 계산에 포함)
+          if (ind.hasPreData && st.preTested) {
             if (st.prePassed) stats["사전기량검증완료"].passed++;
             if (st.preDropped) stats["사전기량검증완료"].dropped++;
             if (st.preWaiting) stats["사전기량검증완료"].waiting++;
           }
 
-          // 본기량검증 대상
-          if (st.mainTested) {
+          // 본기량검증 대상 (본기량 명단에 있는 사람만 계산에 포함)
+          if (ind.hasMainData && st.mainTested) {
             if (st.mainPassed) stats["본기량검증완료"].passed++;
             if (st.mainDropped) stats["본기량검증완료"].dropped++;
             if (st.mainWaiting) stats["본기량검증완료"].waiting++;
@@ -630,7 +633,13 @@
           if (!isOpen || !stage) return [];
           return individuals.filter(ind => {
               const st = getIndividualStatus(ind, currentWeek);
+              const isPreArea = ['사전기량검증완료', '1차 육성(기량,한국어)'].includes(stage);
+              const isMainStage = ['본기량검증완료', '2차 육성(기량,한국어)', '입국'].includes(stage);
               
+              // 해당 단계의 대상자가 아닌 경우 즉시 제외
+              if (isPreArea && !ind.hasPreData) return false;
+              if (isMainStage && !ind.hasMainData) return false;
+
               if (viewType === 'dropped') {
                   if (stage === '사전기량검증완료') return st.preDropped;
                   if (stage === '본기량검증완료') return st.mainDropped;
