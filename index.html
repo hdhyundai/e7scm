@@ -800,12 +800,15 @@
                 </div>
               ) : (
                 <div className="overflow-x-auto sm:rounded-2xl border border-slate-200/60 bg-white shadow-sm">
-                  <table className={`w-full text-center border-collapse ${isMainStage ? 'min-w-[950px]' : 'min-w-[700px]'}`}>
+                  <table className={`w-full text-center border-collapse ${isMainStage ? 'min-w-[1000px]' : 'min-w-[750px]'}`}>
                     <thead className="bg-slate-100/80 text-slate-600 text-xs sm:text-sm border-b border-slate-200">
                       <tr>
                         <th className="p-2 sm:p-3 font-black align-middle text-center w-10 border-r border-slate-200">No.</th>
                         <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors" onClick={() => requestSort('uid')}>
                           <div className="flex items-center justify-center">응시번호 (성명) <SortIcon columnKey="uid" /></div>
+                        </th>
+                        <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors" onClick={() => requestSort('age')}>
+                          <div className="flex items-center justify-center">나이 <SortIcon columnKey="age" /></div>
                         </th>
                         <th className="p-2 sm:p-3 font-black align-middle text-center border-r border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors" onClick={() => requestSort('country')}>
                           <div className="flex items-center justify-center">{authRole === 'production' ? '국가' : '국가 / 업체명'} <SortIcon columnKey="country" /></div>
@@ -857,6 +860,9 @@
                                 <span className="font-bold text-xs sm:text-sm whitespace-nowrap tracking-tight text-slate-800">{ind.name || '이름없음'}</span>
                                 {ind.isE9 && <span className="bg-amber-100 text-amber-700 text-[9px] px-1.5 py-0.5 rounded font-black border border-amber-200 shadow-sm flex items-center shrink-0"><ShieldCheck size={10} className="mr-0.5"/>E-9</span>}
                               </div>
+                            </td>
+                            <td className="p-2 sm:p-3 align-middle text-center border-r border-slate-100 whitespace-nowrap">
+                              <span className="font-bold text-slate-700 text-xs">{ind.age ? `${ind.age}세` : '-'}</span>
                             </td>
                             <td className="p-2 sm:p-3 align-middle text-center border-r border-slate-100">
                               <div className="flex items-center justify-center space-x-1 mb-1">
