@@ -1420,8 +1420,17 @@
       const mergeAndSetIndDB = (preList, mainList) => {
         const mergedMap = new Map();
         
+        // 데이터 정규화(이름 띄어쓰기/대소문자 무시, 생년월일 6자리 숫자 통일)로 중복 방지
+        const makeKey = (name, dob) => {
+            const n = String(name || '').replace(/\s+/g, '').toUpperCase();
+            let d = String(dob || '').replace(/[^0-9]/g, '');
+            if (d.length === 8) d = d.substring(2); // YYYYMMDD -> YYMMDD
+            return `${n}_${d}`;
+        };
+        
         preList.forEach(ind => {
-            const key = `${ind.name}_${ind.dob}`;
+            const key = makeKey(ind.name, ind.dob);
+            if (!key || key === '_') return;
             mergedMap.set(key, {
                 ...ind,
                 hasPreData: true,
@@ -1435,7 +1444,8 @@
         });
         
         mainList.forEach(ind2 => {
-            const key = `${ind2.name}_${ind2.dob}`;
+            const key = makeKey(ind2.name, ind2.dob);
+            if (!key || key === '_') return;
             if (mergedMap.has(key)) {
                 const existing = mergedMap.get(key);
                 mergedMap.set(key, { 
@@ -1444,8 +1454,8 @@
                     hasPreData: true,
                     hasMainData: true,
                     job: ind2.job || existing.job, 
-                    name: ind2.name || existing.name,
-                    dob: ind2.dob || existing.dob,
+                    name: existing.name || ind2.name,
+                    dob: existing.dob || ind2.dob,
                     age: ind2.age || existing.age,
                     isE9: ind2.isE9 || existing.isE9,
                     mainChibuScore: ind2.mainChibuScore || existing.mainChibuScore,
