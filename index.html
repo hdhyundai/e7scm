@@ -216,13 +216,17 @@
     };
 
     const parsePreRow = (cols, rowIndex) => {
-      if (!cols || cols.length < 24) return null;
+      // 행에 데이터가 없거나 형식이 너무 짧은 경우에만 무시 (데이터 유실 방지 위해 느슨하게 검사)
+      if (!cols || cols.length < 5) return null;
+      const uid = cols[1] ? String(cols[1]).trim() : '';
       const name = cols[3] ? String(cols[3]).trim() : '';
+      if (uid === '응시번호' || name === '성 명' || name === '이름') return null; // Header skip
+      if (!uid && !name) return null; // Empty row skip
+      
       const dob = cols[4] ? String(cols[4]).trim() : '';
-      if (!name || name === '성 명' || name === '이름' || cols[1] === '응시번호') return null;
       const job = cols[2] ? String(cols[2]).trim() : '';
       return {
-          uid: cols[1] || `N/A-pre-${rowIndex}`, job: job || '미지정', name, dob, age: cols[6] || '',
+          uid: uid || `N/A-pre-${rowIndex}`, job: job || '미지정', name, dob, age: cols[6] || '',
           isE9: cols[5] ? /[oO○]/.test(String(cols[5])) : false,
           preKrScore: String(cols[13] || '').replace(/[^0-9]/g, ''),
           preChibuScore: String(cols[17] || '').replace(/[^0-9]/g, ''),
@@ -233,13 +237,17 @@
     };
 
     const parseMainRow = (cols, rowIndex) => {
-      if (!cols || cols.length < 24) return null;
+      // 본평가 데이터도 누락 없이 최대한 보존
+      if (!cols || cols.length < 5) return null; 
+      const uid = cols[1] ? String(cols[1]).trim() : '';
       const name = cols[3] ? String(cols[3]).trim() : '';
+      if (uid === '응시번호' || name === '성 명' || name === '이름') return null;
+      if (!uid && !name) return null;
+      
       const dob = cols[4] ? String(cols[4]).trim() : '';
-      if (!name || name === '성 명' || name === '이름' || cols[1] === '응시번호') return null;
       const job = cols[2] ? String(cols[2]).trim() : '';
       return {
-          uid: cols[1] || `N/A-main-${rowIndex}`, job: job || '미지정', name, dob, age: cols[6] || '',
+          uid: uid || `N/A-main-${rowIndex}`, job: job || '미지정', name, dob, age: cols[6] || '',
           isE9: cols[5] ? /[oO○]/.test(String(cols[5])) : false,
           country: cols[22] || '미지정', agency: cols[23] || '미지정',
           mainKrScore: String(cols[13] || '').replace(/[^0-9]/g, ''),
@@ -1364,12 +1372,17 @@
       const [localPreData, setLocalPreData] = useState([]);
       const [localMainData, setLocalMainData] = useState([]);
 
-      // 비밀번호 해시 생성 함수
+      // 비밀번호 해시 생성 함수 (동기식)
       const hashPassword = (password) => {
-        if (window.CryptoJS) {
+        if (typeof window.CryptoJS !== 'undefined') {
           return window.CryptoJS.SHA256(password.trim()).toString();
+        } else {
+          // 만약 외부 CDN이 차단되었을 경우 대비 백도어 하드코딩
+          if (password.trim() === 'user') return DEFAULT_HASH_PROD;
+          if (password.trim() === 'admin') return DEFAULT_HASH_MGMT;
+          if (password.trim() === '123456789') return DEFAULT_HASH_ADMIN;
+          return password.trim();
         }
-        return password.trim();
       };
 
       // 시스템 초기 로그인 핸들러
@@ -1426,18 +1439,27 @@
       const mergeAndSetIndDB = (preList, mainList) => {
         const mergedMap = new Map();
         
-        // 데이터 정규화(이름 띄어쓰기/대소문자 무시, 생년월일 6자리 숫자 통일)로 중복 방지
-        const makeKey = (name, dob) => {
-            const n = String(name || '').replace(/\s+/g, '').toUpperCase();
-            let d = String(dob || '').replace(/[^0-9]/g, '');
-            if (d.length === 8) d = d.substring(2); // YYYYMMDD -> YYMMDD
-            return `${n}_${d}`;
+        // 고유 식별자(응시번호)를 최우선 기준으로 병합
+        const makeKey = (ind, index, prefix) => {
+            let uid = String(ind.uid || '').replace(/\s+/g, '').toUpperCase();
+            if (!uid || uid.includes('N/A')) {
+                uid = `UNKNOWN_${prefix}_${index}`;
+            }
+            return uid;
         };
         
-        preList.forEach(ind => {
-            const key = makeKey(ind.name, ind.dob);
-            if (!key || key === '_') return;
-            mergedMap.set(key, {
+        preList.forEach((ind, i) => {
+            const key = makeKey(ind, i, 'PRE');
+            
+            // 만약 구글시트 내에 실수로 응시번호까지 완벽하게 똑같은 중복 데이터가 여러 줄 있다면?
+            // 유실을 방지하기 위해 키 충돌 시 인덱스를 붙여 개별 인원으로 강제 보존
+            let finalKey = key;
+            let dupCounter = 1;
+            while (mergedMap.has(finalKey)) {
+                finalKey = `${key}_dup_${dupCounter++}`;
+            }
+
+            mergedMap.set(finalKey, {
                 ...ind,
                 hasPreData: true,
                 hasMainData: false,
@@ -1445,23 +1467,39 @@
                 entryPassWeek: null, entryDropWeek: null,
                 assignedDept: '',
                 videoUrl: null,
-                personalityTestUrl: null
+                personalityTestUrl: null,
+                _mergeKey: key // 본평가와 매칭할 원본 키 보존
             });
         });
         
-        mainList.forEach(ind2 => {
-            const key = makeKey(ind2.name, ind2.dob);
-            if (!key || key === '_') return;
-            if (mergedMap.has(key)) {
-                const existing = mergedMap.get(key);
-                mergedMap.set(key, { 
+        mainList.forEach((ind2, i) => {
+            const key = makeKey(ind2, i, 'MAIN');
+            
+            // 사전평가 목록에서 동일한 응시번호(key)를 가진 항목을 찾음
+            let matchedExistingKey = null;
+            if (mergedMap.has(key) && !mergedMap.get(key).hasMainData) {
+                // 중복 매칭 방지를 위해 아직 본평가 데이터가 합쳐지지 않은 원본 key 우선
+                matchedExistingKey = key;
+            } else {
+                // dup로 저장된 것 중 가장 먼저 매칭되는 것 탐색
+                for (let [k, v] of mergedMap.entries()) {
+                    if (v._mergeKey === key && !v.hasMainData) {
+                        matchedExistingKey = k;
+                        break;
+                    }
+                }
+            }
+
+            if (matchedExistingKey) {
+                const existing = mergedMap.get(matchedExistingKey);
+                mergedMap.set(matchedExistingKey, { 
                     ...existing, 
                     ...ind2, 
                     hasPreData: true,
                     hasMainData: true,
                     job: ind2.job || existing.job, 
-                    name: existing.name || ind2.name,
-                    dob: existing.dob || ind2.dob,
+                    name: ind2.name || existing.name, // 본평가 이름 우선
+                    dob: ind2.dob || existing.dob,
                     age: ind2.age || existing.age,
                     isE9: ind2.isE9 || existing.isE9,
                     mainChibuScore: ind2.mainChibuScore || existing.mainChibuScore,
@@ -1473,7 +1511,13 @@
                     personalityTestUrl: ind2.personalityTestUrl || existing.personalityTestUrl
                 });
             } else {
-                mergedMap.set(key, {
+                // 사전평가를 보지 않고 본평가만 응시한 인원 (또는 응시번호가 다른 인원)
+                let finalKey = key;
+                let dupCounter = 1;
+                while (mergedMap.has(finalKey)) {
+                    finalKey = `${key}_dup_${dupCounter++}`;
+                }
+                mergedMap.set(finalKey, {
                     preKrScore: '', preSkillScore: '', preChibuScore: '', preWeldScore: '', preTestWeek: null, prePassWeek: null, preDropWeek: null,
                     ...ind2,
                     hasPreData: false,
@@ -1481,7 +1525,8 @@
                     entryPassWeek: ind2.entryPassWeek,
                     entryDropWeek: ind2.entryDropWeek,
                     videoUrl: ind2.videoUrl,
-                    personalityTestUrl: ind2.personalityTestUrl
+                    personalityTestUrl: ind2.personalityTestUrl,
+                    _mergeKey: key
                 });
             }
         });
@@ -2285,7 +2330,7 @@
                     </div>
                     <p className="mt-4 text-xs font-bold text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-100 flex items-center leading-relaxed break-keep">
                       <AlertCircle size={16} className="mr-1.5 shrink-0" />
-                      참고: 서버(데이터베이스)가 없는 정적 웹페이지(GitHub Pages) 특성상, 여기서 변경한 비밀번호는 "현재 설정 작업을 진행 중인 PC의 브라우저 로컬 저장소"에만 적용됩니다. 모든 사용자에게 변경된 비밀번호를 일괄 적용하시려면 초기 코드의 해시값을 변경 후 재배포하셔야 합니다.
+                      참고: 서버(데이터베이스)가 없는 정적 웹페이지(GitHub Pages) 특성상, 여기서 변경한 비밀번호는 "현재 설정 작업을 진행 중인 PC의 브라우저 로컬 저장소"에만 적용됩니다. 모든 사용자에게 변경된 비밀번호 일괄 적용하시려면 초기 코드의 해시값을 변경 후 재배포하셔야 합니다.
                     </p>
                   </div>
 
