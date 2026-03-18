@@ -276,6 +276,14 @@
             else { st.preTested = true; st.preWaiting = true; } // 기본적으로 명단에 있으면 검증 대상(대기)
         }
 
+        // [중요 수정] 강제 승급 로직 1: 본평가 명단에 진입했다면, 사전평가 탈락 이력은 무효화하고 합격/통과한 것으로 간주
+        if (hasMain) {
+            st.preTested = true;
+            st.prePassed = true;
+            st.preDropped = false;
+            st.preWaiting = false;
+        }
+
         // 2. 본평가 단계 (hasMainData가 있는 명단에 대해서만 판별)
         if (hasMain) {
             if (ind.mainDropWeek && isPast(ind.mainDropWeek)) { st.mainTested = true; st.mainDropped = true; }
@@ -284,9 +292,16 @@
             else { st.mainTested = true; st.mainWaiting = true; } // 기본적으로 본평가 명단에 있으면 검증 대상(대기)
         }
 
-        // 강제 승급: 입국 데이터가 있으면 본평가 합격으로 간주
-        if (hasEntry && hasMain) { 
-            st.mainTested = true; st.mainPassed = true; st.mainDropped = false; st.mainWaiting = false; 
+        // [중요 수정] 강제 승급 로직 2: 입국 명단(입국일자/입국탈락)에 진입했다면, 본평가 탈락 이력 무효화
+        if (hasEntry) { 
+            st.mainTested = true; 
+            st.mainPassed = true; 
+            st.mainDropped = false; 
+            st.mainWaiting = false; 
+            st.preTested = true; 
+            st.prePassed = true; 
+            st.preDropped = false; 
+            st.preWaiting = false; 
         }
 
         // 3. 입국 단계
