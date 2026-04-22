@@ -5,26 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>직영 E-7 수급 관리 DX 대시보드</title>
   
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- React & ReactDOM (UMD Versions for correct global loading) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   
-  <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- PropTypes (Required by Recharts) -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   
-  <!-- Recharts UMD (Pinned to a stable 2.1.x version to prevent ForwardRef internal errors) -->
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
   
-  <!-- Vanilla Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- CryptoJS (For fallback hashing on file:// and GitHub protocol) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
   <style>
@@ -216,7 +209,6 @@
     };
 
     const parsePreRow = (cols, rowIndex) => {
-      // 행에 데이터가 없거나 형식이 너무 짧은 경우에만 무시 (데이터 유실 방지 위해 느슨하게 검사)
       if (!cols || cols.length < 5) return null;
       const uid = cols[1] ? String(cols[1]).trim() : '';
       const name = cols[3] ? String(cols[3]).trim() : '';
@@ -237,7 +229,6 @@
     };
 
     const parseMainRow = (cols, rowIndex) => {
-      // 본평가 데이터도 누락 없이 최대한 보존
       if (!cols || cols.length < 5) return null; 
       const uid = cols[1] ? String(cols[1]).trim() : '';
       const name = cols[3] ? String(cols[3]).trim() : '';
@@ -263,21 +254,17 @@
         let st = { preTested: false, prePassed: false, preDropped: false, preWaiting: false, mainTested: false, mainPassed: false, mainDropped: false, mainWaiting: false, entryPassed: false, entryDropped: false, currentStage: '진행예정' };
         const isPast = (w) => w === '탈락' || (typeof w === 'number' && currentWeek >= w);
         
-        // 데이터 존재 여부 파악
         const hasMain = ind.hasMainData;
         const hasPre = ind.hasPreData;
         const hasEntry = ind.entryPassWeek || ind.entryDropWeek;
 
-        // 1. 사전평가 단계 (hasPreData가 있는 명단에 대해서만 판별)
         if (hasPre) {
             if (ind.preDropWeek && isPast(ind.preDropWeek)) { st.preTested = true; st.preDropped = true; }
             else if (ind.prePassWeek && isPast(ind.prePassWeek)) { st.preTested = true; st.prePassed = true; }
             else if (ind.preTestWeek && isPast(ind.preTestWeek)) { st.preTested = true; st.preWaiting = true; }
-            else { st.preTested = true; st.preWaiting = true; } // 기본적으로 명단에 있으면 검증 대상(대기)
+            else { st.preTested = true; st.preWaiting = true; }
         }
 
-        // [중요 수정] 강제 승급 로직 1: 본평가 명단에 진입했다면, 사전평가 탈락 이력은 무효화하고 합격/통과한 것으로 간주
-        // (단, 사전평가 명단에 이름이 올라간 대상자일 경우에만 사전평가 통계에 집계되도록)
         if (hasPre && hasMain) {
             st.preTested = true;
             st.prePassed = true;
@@ -285,15 +272,13 @@
             st.preWaiting = false;
         }
 
-        // 2. 본평가 단계 (hasMainData가 있는 명단에 대해서만 판별)
         if (hasMain) {
             if (ind.mainDropWeek && isPast(ind.mainDropWeek)) { st.mainTested = true; st.mainDropped = true; }
             else if (ind.mainPassWeek && isPast(ind.mainPassWeek)) { st.mainTested = true; st.mainPassed = true; }
             else if (ind.mainTestWeek && isPast(ind.mainTestWeek)) { st.mainTested = true; st.mainWaiting = true; }
-            else { st.mainTested = true; st.mainWaiting = true; } // 기본적으로 본평가 명단에 있으면 검증 대상(대기)
+            else { st.mainTested = true; st.mainWaiting = true; }
         }
 
-        // [중요 수정] 강제 승급 로직 2: 입국 명단(입국일자/입국탈락)에 진입했다면, 본평가 탈락 이력 무효화
         if (hasMain && hasEntry) { 
             st.mainTested = true; 
             st.mainPassed = true; 
@@ -307,11 +292,9 @@
             st.preWaiting = false; 
         }
 
-        // 3. 입국 단계
         if (ind.entryDropWeek && isPast(ind.entryDropWeek)) st.entryDropped = true;
         else if (ind.entryPassWeek && isPast(ind.entryPassWeek)) st.entryPassed = true;
 
-        // 최종 스테이지 결정 (현재 어디에 머물러 있는가)
         if (st.entryDropped || st.entryPassed) st.currentStage = '입국';
         else if (st.mainPassed) st.currentStage = '2차 육성(기량,한국어)';
         else if (st.mainDropped || st.mainWaiting) st.currentStage = '본기량검증완료';
@@ -327,7 +310,6 @@
       let inds = individuals.map(ind => ({...ind}));
       const availableDepts = [...new Set(needs.map(n => n.dept))].sort((a, b) => b.length - a.length);
 
-      // Phase 1: 고정 할당
       inds.forEach(ind => {
         if (ind.assignedDept && ind.assignedDept.trim() !== '') {
           let assigned = ind.assignedDept.trim();
@@ -346,7 +328,6 @@
         } else { ind.isDeptFixed = false; }
       });
 
-      // Phase 2: 미확정 인원 스마트 배정 (동일일자+동일국가 최우선)
       const pendingInds = inds.filter(i => !i.isDeptFixed);
       const groups = {};
       pendingInds.forEach(ind => {
@@ -491,21 +472,18 @@
 
       const stats = { "사전기량검증완료": { waiting:0, passed:0, dropped:0 }, "1차 육성(기량,한국어)": { current:0 }, "본기량검증완료": { waiting:0, passed:0, dropped:0 }, "2차 육성(기량,한국어)": { current:0 }, "입국": { passed:0, dropped:0 } };
       
-      // 고유 명단 개수 그대로 반영 (독립적 산출)
       let totalPreTested = individuals.filter(ind => ind.hasPreData).length;
       let totalMainTested = individuals.filter(ind => ind.hasMainData).length;
 
       individuals.forEach(ind => {
           const st = getIndividualStatus(ind, currentWeek);
 
-          // 사전기량검증 대상 (사전기량 명단에 있는 사람만 계산에 포함)
           if (ind.hasPreData && st.preTested) {
             if (st.prePassed) stats["사전기량검증완료"].passed++;
             if (st.preDropped) stats["사전기량검증완료"].dropped++;
             if (st.preWaiting) stats["사전기량검증완료"].waiting++;
           }
 
-          // 본기량검증 대상 (본기량 명단에 있는 사람만 계산에 포함)
           if (ind.hasMainData && st.mainTested) {
             if (st.mainPassed) stats["본기량검증완료"].passed++;
             if (st.mainDropped) stats["본기량검증완료"].dropped++;
@@ -515,7 +493,6 @@
           if (st.entryPassed) stats["입국"].passed++;
           if (st.entryDropped) stats["입국"].dropped++;
 
-          // 현재 체류 단계
           if (st.currentStage === '1차 육성(기량,한국어)') stats["1차 육성(기량,한국어)"].current++;
           if (st.currentStage === '2차 육성(기량,한국어)') stats["2차 육성(기량,한국어)"].current++;
       });
@@ -636,7 +613,6 @@
               const isPreArea = ['사전기량검증완료', '1차 육성(기량,한국어)'].includes(stage);
               const isMainStage = ['본기량검증완료', '2차 육성(기량,한국어)', '입국'].includes(stage);
               
-              // 해당 단계의 대상자가 아닌 경우 즉시 제외
               if (isPreArea && !ind.hasPreData) return false;
               if (isMainStage && !ind.hasMainData) return false;
 
@@ -1596,9 +1572,9 @@
         e.target.value = null; 
       };
 
-      const fetchGoogleSheets = async () => {
+      const fetchGoogleSheets = async (isManual = false) => {
         if (!baseSheetUrl || !individualSheetUrl) {
-          showAlert("구글 시트 링크를 모두 입력해주세요.");
+          if (isManual) showAlert("구글 시트 링크를 모두 입력해주세요.");
           return;
         }
 
@@ -1606,7 +1582,7 @@
         const indSheetId = getSheetId(individualSheetUrl);
 
         if (!baseSheetId || !indSheetId) {
-          showAlert("올바른 구글 시트 링크가 아닙니다. 공유 링크를 다시 확인해주세요.");
+          if (isManual) showAlert("올바른 구글 시트 링크가 아닙니다. 공유 링크를 다시 확인해주세요.");
           return;
         }
 
@@ -1704,7 +1680,9 @@
           }
 
           if (successCount >= 3) {
-            showAlert(`🎉 모든 데이터가 완벽하게 동기화되었습니다!\n\n${errorDetails.join('\n')}`);
+            if (isManual) {
+                showAlert(`🎉 모든 데이터가 완벽하게 동기화되었습니다!\n\n${errorDetails.join('\n')}`);
+            }
             localStorage.setItem('baseSheetUrl', baseSheetUrl);
             localStorage.setItem('individualSheetUrl', individualSheetUrl);
             localStorage.setItem('deptTabName', deptTabName);
@@ -1712,15 +1690,19 @@
             localStorage.setItem('individualTabName1', individualTabName1);
             localStorage.setItem('individualTabName2', individualTabName2);
           } else {
-            showAlert(`⚠️ 동기화 부분 실패 또는 오류 발생\n\n${errorDetails.join('\n')}\n\n※ 접근 권한 또는 탭 이름을 확인해주세요.`);
+            if (isManual || successCount === 0) {
+              showAlert(`⚠️ 동기화 부분 실패 또는 오류 발생\n\n${errorDetails.join('\n')}\n\n※ 접근 권한, 탭 이름, 또는 시트의 '필터' 적용 여부를 확인해주세요.`);
+            }
           }
         } catch (err) {
-          if (err.message === 'AUTH_REQUIRED') {
-            showAlert('❌ [권한 오류] 구글 시트 접근 권한이 없습니다.\n시트 우측 상단의 [공유] 설정에서 "제한됨"을 "링크가 있는 모든 사용자(뷰어)"로 변경해 주세요.');
-          } else if (err.message.includes('SHEET_NOT_FOUND')) {
-            showAlert(`❌ [탭 이름 오류] 탭을 찾을 수 없습니다.\n화면 하단의 탭 이름이 정확한지 확인해 주세요.`);
-          } else {
-            showAlert(`❌ 예상치 못한 오류 발생:\n${err.message}`);
+          if (isManual) {
+            if (err.message === 'AUTH_REQUIRED') {
+              showAlert('❌ [권한 오류] 구글 시트 접근 권한이 없습니다.\n시트 우측 상단의 [공유] 설정에서 "제한됨"을 "링크가 있는 모든 사용자(뷰어)"로 변경해 주세요.');
+            } else if (err.message.includes('SHEET_NOT_FOUND')) {
+              showAlert(`❌ [탭 이름 오류] 탭을 찾을 수 없습니다.\n화면 하단의 탭 이름이 정확한지 확인해 주세요.`);
+            } else {
+              showAlert(`❌ 예상치 못한 오류 발생:\n${err.message}`);
+            }
           }
         } finally {
           setIsLoading(false);
@@ -1728,7 +1710,7 @@
       };
 
       useEffect(() => { 
-        if (baseSheetUrl && individualSheetUrl) fetchGoogleSheets(); 
+        if (baseSheetUrl && individualSheetUrl) fetchGoogleSheets(false); 
         const currentIsoWeek = getIsoWeek(new Date());
         setCurrentWeek(currentIsoWeek > 52 ? 52 : currentIsoWeek);
       }, []);
@@ -1989,7 +1971,7 @@
                 
                 <div className="w-px h-5 bg-slate-700/50 mx-2 hidden sm:block"></div>
                 
-                <button onClick={fetchGoogleSheets} disabled={isLoading} className="flex-1 lg:flex-none justify-center px-3 py-3 flex items-center rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/20 transition-all duration-300 disabled:opacity-50" title="클라우드 DB 동기화 실행">
+                <button onClick={() => fetchGoogleSheets(true)} disabled={isLoading} className="flex-1 lg:flex-none justify-center px-3 py-3 flex items-center rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/20 transition-all duration-300 disabled:opacity-50" title="클라우드 DB 동기화 실행">
                   {isLoading ? <RefreshCw size={18} className="animate-spin text-cyan-400" /> : <Database size={18} />}
                 </button>
                 <button onClick={() => { setAuthRole(null); setActiveTab('dashboard'); setIsAdminAuthenticated(false); }} className="flex-1 lg:flex-none justify-center px-3 py-3 flex items-center rounded-xl text-slate-400 hover:text-rose-300 hover:bg-rose-500/20 transition-all duration-300 ml-1" title="로그아웃">
@@ -2398,11 +2380,13 @@
                   
                   {/* 가이드 영역 */}
                   <div className="bg-amber-50/80 border border-amber-200/60 rounded-3xl p-6 sm:p-8 mb-10 flex flex-col gap-2 shadow-sm relative z-10">
-                     <h3 className="text-lg font-black text-amber-900 flex items-center tracking-tight"><AlertCircle className="w-5 h-5 mr-2 text-amber-600"/> 데이터 무결성 가이드 (탈락일자 표기법)</h3>
-                     <p className="text-sm text-amber-800 font-medium leading-relaxed">
-                       탈락 여부를 기록할 때 '탈락'이라는 글자 대신 <strong>탈락한 날짜(예: 3/15)</strong>를 입력하시면 타임라인 슬라이더의 주차 이동에 따라 탈락 인원도 동적으로 변동되어 표시됩니다.
+                     <h3 className="text-lg font-black text-amber-900 flex items-center tracking-tight"><AlertCircle className="w-5 h-5 mr-2 text-amber-600"/> 데이터 무결성 가이드 (필터 및 표기법)</h3>
+                     <p className="text-sm text-amber-800 font-bold leading-relaxed">
+                       <span className="text-rose-600">🚨 [필수 주의] 구글 시트에 기본 '필터'가 적용되어 행이 숨겨져 있으면 대시보드에도 해당 인원이 누락됩니다.</span><br/>
+                       항상 시트의 필터를 해제한 상태로 유지하시거나, 개인별 조회가 필요할 땐 데이터 손실이 없는 <strong>'필터 보기(Filter Views)'</strong> 기능을 사용해주세요.
                      </p>
                      <ul className="list-disc list-inside text-sm text-amber-800 font-bold ml-4 mt-3 space-y-2">
+                       <li>탈락 여부를 기록할 땐 '탈락' 글자 대신 <strong>탈락한 날짜(예: 3/15)</strong>를 기재해야 주차 슬라이더에 동기화됩니다.</li>
                        <li>사전기량검증: 합격일자는 <strong>Z열</strong> / 사전기량 탈락일자는 <strong>AA열</strong>에 날짜 기재</li>
                        <li>본기량검증(본평가): 본기량 합격일자 <strong>Z열</strong> / 본기량 탈락일자 <strong>AA열</strong>에 날짜 기재</li>
                        <li>본기량검증(입국): 입국일자 <strong>AB열</strong> / 입국 탈락일자 <strong>AC열</strong>에 날짜 기재</li>
